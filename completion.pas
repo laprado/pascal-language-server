@@ -24,8 +24,7 @@ unit completion;
 interface
 
 uses
-  SysUtils, Classes, URIParser, CodeToolManager, CodeCache, IdentCompletionTool, BasicCodeTools,
-  PascalParserTool, CodeTree, lsp, basic;
+  SysUtils, Classes, lsp, basic;
 
 type
 
@@ -410,6 +409,125 @@ type
 
 implementation
 
+uses
+  URIParser, CodeToolManager, CodeCache, IdentCompletionTool, 
+  BasicCodeTools, PascalParserTool, CodeTree,
+  udebug;
+
+
+type
+  TStringSlice = record
+    a, b: integer;
+  end;
+
+  TCompletionRec = record
+    Text:       String;
+    Identifier: TStringSlice;
+    ResultType: TStringSlice;
+    Parameters: array of TStringSlice;
+    Desc:       String;
+  end;
+
+  TCompletionRecArray = array of TCompletionRec;
+
+function GetCompletionRecords(Code: TCodeBuffer; X, Y: integer; Prefix: String;
+  Exact: Boolean): TCompletionRecArray;
+var
+  Identifier:       TIdentifierListItem;
+  i, j, o, Count:   integer;
+  ResultType:       String;
+  Text:             String;
+  Segment:          String;
+  node, paramsNode,
+  resultNode:       TCodeTreeNode;
+  SegmentLen:       integer;
+
+  function AppendString(var S: String; Suffix: String): TStringSlice;
+  begin
+    Result.a := Length(S) + 1;
+    Result.b := Length(S) + Length(Suffix) + 1;
+    S := S + Suffix;
+  end;
+
+begin
+  assert(Assigned(Code));
+
+  CodeToolBoss.IdentifierList.Prefix := Prefix;
+  Result := nil;
+
+  if not CodeToolBoss.GatherIdentifiers(Code, X, Y) then
+    raise EParseError.Create(CodeToolBoss.ErrorMessage);
+
+  Count := CodeToolBoss.IdentifierList.GetFilteredCount;
+  SetLength(Result, Count);
+
+  o := 0;
+  for i := 0 to Count - 1 do
+  begin
+    Identifier := CodeToolBoss.IdentifierList.FilteredItems[i];
+    Text := '';
+    if (not Exact) or (CompareText(Identifier.Identifier, Prefix) = 0) then
+    begin
+      resultNode := Identifier.Tool.GetProcResultNode(identifier.Node);
+      paramsNode := Identifier.Tool.GetProcParamList(identifier.Node);
+      if Assigned(paramsNode) then
+      begin
+        SetLength(Result[I].Parameters, paramsNode.ChildCount);
+
+        ResultType :=
+          Identifier.Tool.ExtractProcHead(
+            identifier.Node, 
+            [
+              phpWithoutName, phpWithoutParamList, phpWithoutSemicolon, 
+              phpWithResultType, phpWithoutBrackets, phpWithoutGenericParams,
+              phpWithoutParamTypes
+            ]
+          ).Replace(':', '').Trim;
+
+        node := paramsNode.firstChild;
+
+        Result[o].Identifier := AppendString(Text, Identifier.Identifier);
+        AppendString(Text, ' (');
+
+        for j := 0 to paramsNode.ChildCount - 1 do
+        begin
+          Segment := Identifier.Tool.ExtractNode(node, []);
+          Segment := StringReplace(Segment, ':', ': ', [rfReplaceAll]);
+          Segment := StringReplace(Segment, '=', ' = ', [rfReplaceAll]);
+
+          Result[o].Parameters[j] := AppendString(Text, Segment);
+
+          SegmentLen := Pos(':', Segment) - 1;
+          if SegmentLen <= 0 then
+            SegmentLen := Length(Segment);
+
+          if J <> paramsNode.ChildCount - 1 then
+            Text := Text + ', ';
+
+          node := node.NextBrother;
+        end;
+
+        AppendString(Text, ')');
+      end
+      else
+        Result[o].Identifier := AppendString(Text, Identifier.Identifier);
+
+      if ResultType <> '' then
+      begin
+        AppendString(Text, ': ');
+        Result[o].ResultType := AppendString(Text, ResultType);
+      end;
+
+      Result[o].Text := Text;
+      Result[o].Desc := Identifier.Node.DescAsString;
+    end;
+    Inc(o);
+  end;
+
+  SetLength(Result, o);
+end;
+
+
 { TParameterInformation }
 
 constructor TParameterInformation.Create;
@@ -491,158 +609,124 @@ end;
 function TSignatureHelp.Process(var Params: TSignatureHelpParams
   ): TSignatureList;
 var
-  Signature: TSignatureInformation;
-  Signatures: TSignatureInformationList;    
-var
   URI: TURI;
   Code: TCodeBuffer;
-  X, Y, Count, I, J: Integer;
-  ParamsString, Segment: string;
+  Recs: TCompletionRecArray;
+  Rec: TCompletionRec;
+  Signature: TSignatureInformation;
+  Signatures: TSignatureInformationList;    
+  ProcName: String;
   Param: TParameterInformation;
-  ProcStart: integer;
-  Offset: Integer;
-  SegmentLen: Integer;
-  CodeContexts: TCodeContextInfo;
+  X, Y, i: integer;
 
-  Identifier: TIdentifierListItem;
+  function GetProcName(Code: TCodeBuffer; var X, Y: integer): String;
+  var
+    CodeContexts: TCodeContextInfo;
+    ProcStart: integer;
+  begin
+    Result := '';
 
-  paramsNode, n: TCodeTreeNode;
+    CodeToolBoss.FindCodeContext(Code, X + 1, Y + 1, CodeContexts);
+
+    if not Assigned(CodeContexts) then
+      raise EParseError.Create(CodeToolBoss.ErrorMessage);
+
+    ProcStart := CodeContexts.StartPos;
+
+    // ProcStart point to the parenthesis before the first parameter.
+    // But we actually need a position *inside* the procedure identifier.
+    // Note that there may be whitespace, even newlines, between the first
+    // parenthesis and the procedure.
+    while (ProcStart > 1) and (Code.Source[ProcStart] in ['(', ' ', #13, #10, #9]) do
+      Dec(ProcStart);
+
+    Code.AbsoluteToLineCol(ProcStart, Y, X);
+
+    Result := CodeContexts.ProcName;
+  end;
 begin
-  Result := TSignatureList.Create;
-  Signatures := TSignatureInformationList.Create;
-
-  Result.signatures := Signatures;
-
   URI := ParseURI(Params.textDocument.uri);
+  //Code := CodeToolBoss.LoadFile(URI.Path + URI.Document, true, false);
   Code := CodeToolBoss.FindFile(URI.Path + URI.Document);
-  //Code := CodeToolBoss.LoadFile(URI.Path + URI.Document, True, False);
-
 
   assert(Code <> nil);
 
   X := Params.position.character;
   Y := Params.position.line;
+  ProcName := GetProcName(Code, X, Y);
 
-  CodeToolBoss.FindCodeContext(Code, X + 1, Y + 1, CodeContexts);
+  Recs := GetCompletionRecords(Code, X, Y, ProcName, true);
 
-  if CodeContexts = nil then // parse error
-    Exit;
+  Result := TSignatureList.Create;
+  Signatures := TSignatureInformationList.Create;
+  Result.signatures := Signatures;
 
-  assert(CodeContexts <> nil);
-
-  ProcStart := CodeContexts.StartPos;
-
-  // ProcStart point to the parenthesis before the first parameter.
-  // But we actually need a position *inside* the procedure identifier.
-  // Note that there may be whitespace, even newlines, between the first
-  // parenthesis and the procedure.
-  while (ProcStart > 1) and (Code.Source[ProcStart] in ['(', ' ', #13, #10, #9]) do
-    Dec(ProcStart);
-
-  Code.AbsoluteToLineCol(ProcStart, Y, X);
-
-  CodeToolBoss.IdentifierList.Prefix := CodeContexts.ProcName;
-
-  if CodeToolBoss.GatherIdentifiers(Code, X, Y) then
+  for Rec in Recs do
   begin
-    Count := CodeToolBoss.IdentifierList.GetFilteredCount;
-    for I := 0 to Count - 1 do
+    Signature := TSignatureInformation(Signatures.Add);
+    Signature.&label := Rec.Text;
+    for i := 0 to Length(Rec.Parameters) - 1 do
     begin
-      Identifier := CodeToolBoss.IdentifierList.FilteredItems[I];
-      if CompareText(Identifier.Identifier, CodeContexts.ProcName) = 0 then
-      begin
-        Signature := TSignatureInformation(Signatures.Add);
-        paramsNode := Identifier.Tool.GetProcParamList(identifier.Node);
-
-        assert(paramsNode <> nil);
-
-        ParamsString := '';
-
-        n := paramsNode.firstChild;
-
-        Offset := 0;
-        for J := 0 to paramsNode.ChildCount - 1 do
-        begin
-          Segment := Identifier.Tool.ExtractNode(n,[]);
-          Segment := StringReplace(Segment, ':', ': ', [rfReplaceAll]);
-          Segment := StringReplace(Segment, '=', ' = ', [rfReplaceAll]);
-
-          ParamsString := ParamsString + Segment;
-
-          SegmentLen := Pos(':', Segment) - 1;
-          if SegmentLen <= 0 then
-            SegmentLen := Length(Segment);
-
-          if J <> paramsNode.ChildCount - 1 then
-            ParamsString := ParamsString + ', ';
-
-          Param := TParameterInformation(Signature.parameters.Add);
-          Param.&label := TIntegerPair.Create(Offset, Offset + SegmentLen);
-
-          Offset := Length(ParamsString);
-
-          n := n.NextBrother;
-        end;
-
-        Signature.&label := ParamsString;
-      end;
+      Param := TParameterInformation(Signature.parameters.Add);
+      Param.&label := TIntegerPair.Create(
+        Rec.Parameters[i].a, Rec.Parameters[i].b
+      );
     end;
-  end else begin
-    if CodeToolBoss.ErrorMessage<>'' then
-      writeln(stderr, 'Parse error: ',CodeToolBoss.ErrorMessage)
-    else
-      writeln(stderr, 'Error: no context');
   end;
-
 end;
 
 { TCompletion }
 
 function TCompletion.Process(var Params: TCompletionParams): TCompletionList;
 var
+  Recs: TCompletionRecArray;
+  Rec: TCompletionRec;
   URI: TURI;
   Code: TCodeBuffer;
-  X, Y, PStart, PEnd, Count, I: Integer;
-  Line: string;
-  Completions: TCompletionItems;
-  Identifier: TIdentifierListItem;
-  Completion: TCompletionItem;
-begin with Params do
-  begin
-    URI := ParseURI(textDocument.uri);
-    Code := CodeToolBoss.FindFile(URI.Path + URI.Document);
-    //Code := CodeToolBoss.LoadFile(URI.Path + URI.Document,True,False);
-    assert(Code <> nil);
+  X, Y: integer;
+  Prefix: String;
 
-    X := position.character;
-    Y := position.line;
+  Completions: TCompletionItems;
+  Completion: TCompletionItem;
+
+  function GetPrefix(Code: TCodeBuffer; X, Y: integer): String;
+  var
+    PStart, PEnd: integer;
+    Line: String;
+  begin
     Line := Code.GetLine(Y);
     GetIdentStartEndAtPosition(Line, X + 1, PStart, PEnd);
-    CodeToolBoss.IdentifierList.Prefix := Copy(Line, PStart, PEnd - PStart);
-
-    Completions := TCompletionItems.Create;
-
-    if CodeToolBoss.GatherIdentifiers(Code, X + 1, Y + 1) then
-    begin
-      Count := CodeToolBoss.IdentifierList.GetFilteredCount;
-      for I := 0 to Count - 1 do
-      begin
-        Identifier := CodeToolBoss.IdentifierList.FilteredItems[I];
-        Completion := TCompletionItem(Completions.Add);
-        Completion.insertText := Identifier.Identifier;
-        Completion.detail := Identifier.Node.DescAsString;
-        Completion.insertTextFormat := TInsertTextFormat.PlainText;
-      end;
-    end else begin
-      if CodeToolBoss.ErrorMessage <> '' then
-        writeln(stderr, 'Parse error: ',CodeToolBoss.ErrorMessage)
-      else
-        writeln(stderr, 'Error: no context');
-    end;
-
-    Result := TCompletionList.Create;
-    Result.items := Completions;
+    Result := Copy(Line, PStart, PEnd - PStart);
   end;
+begin
+  URI := ParseURI(Params.textDocument.uri);
+  Code := CodeToolBoss.FindFile(URI.Path + URI.Document);
+  //Code := CodeToolBoss.LoadFile(URI.Path + URI.Document, true, false);
+  assert(Assigned(Code));
+
+  X := Params.position.character;
+  Y := Params.position.line;
+  Prefix := GetPrefix(Code, X, Y);
+
+  DebugLog('Complete: %d, %d, "%s"', [X, Y, Prefix]);
+
+  Recs := GetCompletionRecords(Code, X + 1, Y + 1, Prefix, false);
+
+  Completions := TCompletionItems.Create;
+  
+  for Rec in Recs do
+  begin
+    Completion := TCompletionItem(Completions.Add);
+    Completion.insertText := Copy(
+      Rec.Text, Rec.Identifier.a, Rec.Identifier.b - Rec.Identifier.a
+    );
+    Completion.&label := Rec.Text;
+    Completion.detail := Rec.Desc;
+    Completion.insertTextFormat := TInsertTextFormat.PlainText;
+  end;
+
+  Result := TCompletionList.Create;
+  Result.items := Completions;
 end;
 
 initialization

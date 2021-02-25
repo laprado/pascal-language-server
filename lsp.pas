@@ -109,6 +109,13 @@ type
     function Code: Integer; override;
   end;
 
+  { EParseError }
+
+  EParseError = class(LSPException)
+  public
+    function Code: Integer; override;
+  end;
+
   EUnknownErrorCode = class(LSPException)
   public
     function Code: Integer; override;
@@ -130,6 +137,13 @@ type
 function LSPHandlerManager: TCustomJSONRPCHandlerManager;
 
 implementation
+
+{ EParseError }
+
+function EParseError.Code: Integer;
+begin
+  Result := -32700;
+end;
 
 { TLSPStreamer }
 

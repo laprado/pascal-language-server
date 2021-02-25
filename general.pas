@@ -161,6 +161,7 @@ var
   end;
 
 begin
+
   try
     ReadXMLFile(doc, filename);
     if not Assigned(doc) then

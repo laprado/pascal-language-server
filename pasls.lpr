@@ -93,7 +93,7 @@ begin
     Request := TJSONParser.Create(Content, DefaultOptions).Parse;
     Response := Dispatcher.Execute(Request);
 
-    DebugLog(Copy(_Request, 1, 200) + Copy(RequestContent, 1, 200));
+    DebugLog('> Request: '#10'%s', [Copy(RequestContent, 1, 200)]);
 
     if Assigned(Response) then
     begin
@@ -107,7 +107,7 @@ begin
     else
       Content := '-';
 
-    DebugLog(Copy(_Response, 1, 200) + Copy(Content, 1, 200));
+    DebugLog('< Response: '#10'%s', [Copy(Content, 1, 200)]);
 
     FreeAndNil(Request);
     FreeAndNil(Response);
