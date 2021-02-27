@@ -25,7 +25,7 @@ interface
 
 uses
   Classes, SysUtils, TypInfo, fpjson, fpjsonrtti, fpjsonrpc,
-  basic;
+  basic, fgl;
 
 type
 
@@ -34,6 +34,8 @@ type
   TLSPStreamer = class(TJSONStreamer)
   protected
     function StreamClassProperty(const AObject: TObject): TJSONData; override;
+  public
+    constructor Create(AOwner : TComponent); override;
   end;
 
   { TLSPDeStreamer }
@@ -131,6 +133,11 @@ implementation
 
 { TLSPStreamer }
 
+constructor TLSPStreamer.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+end;
+
 function TLSPStreamer.StreamClassProperty(const AObject: TObject): TJSONData;
 var
   C: TClass;
@@ -157,6 +164,10 @@ begin
       if OptionalObject.Value = nil then Result := TJSONNull.Create
       else Result := ObjectToJSON(OptionalObject.Value)
     else Result := nil
+  end
+  else if C.InheritsFrom(TIntegerPair) then
+  begin
+    Result := TJSONArray.Create([TIntegerPair(AObject).a, TIntegerPair(AObject).b]);
   end
   else Result := inherited StreamClassProperty(AObject)
 end;

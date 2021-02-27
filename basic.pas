@@ -273,7 +273,23 @@ type
     property value: string read fValue write fValue;
   end;
 
+  { TIntegerPair }
+
+  TIntegerPair = class(TPersistent)
+  public
+    a, b: integer;
+    constructor Create(_a, _b: integer);
+  end;
+
 implementation
+
+{ TIntegerPair }
+
+constructor TIntegerPair.Create(_a, _b: integer);
+begin
+  a := _a;
+  b := _b;
+end;
 
 { TOptional }
 

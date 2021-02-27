@@ -99,7 +99,39 @@ type
     property resolveProvider: Boolean read fResolveProvider write fResolveProvider;
   end;
 
+  { TSignatureHelpOptions }
+
+  TSignatureHelpOptions = class(TPersistent)
+  private
+    fRetriggerCharacters: TStrings;
+    fTriggerCharacters: TStrings;
+  public
+    constructor Create;
+    destructor Destroy; override;
+  published
+    property triggerCharacters: TStrings read fTriggerCharacters write fTriggerCharacters;
+    property retriggerCharacters: TStrings read fRetriggerCharacters write fRetriggerCharacters;
+  end;
+
 implementation
+
+{ TSignatureHelpOptions }
+
+constructor TSignatureHelpOptions.Create;
+begin
+  fTriggerCharacters := TStringList.Create;
+  fTriggerCharacters.Add('(');           
+  fTriggerCharacters.Add(',');
+  fRetriggerCharacters := TStringlist.Create;
+  //fRetriggerCharacters.Add(',');
+end;
+
+destructor TSignatureHelpOptions.Destroy;
+begin
+  FreeAndNil(fTriggerCharacters);
+  FreeAndNil(fRetriggerCharacters);
+  inherited Destroy;
+end;
 
 { TTextDocumentSyncOptions}
 

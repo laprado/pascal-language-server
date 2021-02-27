@@ -25,7 +25,7 @@ interface
 
 uses
   SysUtils, Classes, URIParser, CodeToolManager, CodeCache, IdentCompletionTool, BasicCodeTools,
-  lsp, basic;
+  PascalParserTool, CodeTree, lsp, basic;
 
 type
 
@@ -248,7 +248,179 @@ type
     function Process(var Params: TCompletionParams): TCompletionList; override;
   end;
 
+
+  { Forward declaration }
+
+  TSignatureHelp = class;
+
+  { TSignatureHelpTriggerKind }
+
+  TSignatureHelpTriggerKind = (
+    //Signature help was invoked manually by the user or by a command.
+    shtkInvoked = 1,
+    // Signature help was triggered by a trigger character.
+    shtkTriggerCharacter = 2,
+    // Signature help was triggered by the cursor moving or by the document
+    // content changing.
+    shtkContentChange = 3
+  );
+
+  { TSignatureHelpContext }
+
+  TSignatureHelpContext = class(TPersistent)
+  private
+    fTriggerKind: TCompletionTriggerKind;
+    fTriggerCharacter: string;
+    fIsRetrigger: Boolean;
+    fActiveSignatureHelp: TSignatureHelp;
+  public
+    destructor Destroy; override;
+  published
+    // Action that caused signature help to be triggered.
+    property triggerKind: TCompletionTriggerKind read fTriggerKind write fTriggerKind;
+
+    // Character that caused signature help to be triggered.
+    //
+    // This is undefined when triggerKind !==
+    // SignatureHelpTriggerKind.TriggerCharacter
+    property triggerCharacter: string read fTriggerCharacter write fTriggerCharacter;
+
+    // `true` if signature help was already showing when it was triggered.
+    //
+    // Retriggers occur when the signature help is already active and can be
+    // caused by actions such as typing a trigger character, a cursor move, or
+    // document content changes.
+    property isRetrigger: Boolean read fIsRetrigger write fIsRetrigger;
+
+    // The currently active `SignatureHelp`.
+    //
+    // The `activeSignatureHelp` has its `SignatureHelp.activeSignature` field
+    // updated based on the user navigating through available signatures.
+    property activeSignatureHelp: TSignatureHelp read fActiveSignatureHelp write fActiveSignatureHelp;
+  end;
+
+  { TSignatureHelpParams }
+
+  TSignatureHelpParams = class(TTextDocumentPositionParams)
+  private
+    fContext: TCompletionContext;
+  public
+    destructor Destroy; override;
+  published
+    // The signature help context. This is only available if the client
+    // specifies to send this using the client capability
+    // `textDocument.signatureHelp.contextSupport === true`
+    //
+    // @since 3.15.0
+    property context: TCompletionContext read fContext write fContext;
+  end;
+
+  { TParameterInformation }
+
+  TParameterInformation = class(TCollectionItem)
+  private
+    fLabel: TIntegerPair;
+    fDocumentation: string;
+  public
+    constructor Create;
+    destructor Destroy; override;
+  published
+    // The label of this parameter information.
+    //
+    // Either a string or an inclusive start and exclusive end offsets within
+    // its containing signature label. (see SignatureInformation.label). The
+    // offsets are based on a UTF-16 string representation as `Position` and
+    // `Range` does.
+    //
+    // *Note*: a label of type string should be a substring of its containing
+    // signature label. Its intended use case is to highlight the parameter
+    // label part in the `SignatureInformation.label`.
+    //property &label: string read fLabel write fLabel;// | [uinteger, uinteger];
+    property &label: TIntegerPair read fLabel write fLabel;
+
+    // The human-readable doc-comment of this parameter. Will be shown
+    // in the UI but can be omitted.
+    property documentation: string read fDocumentation write fDocumentation;
+  end;
+
+  { TParameterInformationList }
+
+  TParameterInformationList = class(TCollection)
+  end;
+
+  { TSignatureInformation }
+
+  TSignatureInformation = class(TCollectionItem)
+  private
+    fActiveParameter: integer;
+    fLabel: string;
+    fDocumentation: string;
+    fParameters: TParameterInformationList;
+  public
+    constructor Create(ACollection: TCollection); override;
+    destructor Destroy; override;
+  published
+    // The label of this signature. Will be shown in
+    // the UI.
+    property &label: string read fLabel write fLabel;
+
+    // The human-readable doc-comment of this signature. Will be shown
+    // in the UI but can be omitted.
+    property documentation: string read fDocumentation write fDocumentation;
+
+    // The parameters of this signature.
+  	property parameters: TParameterInformationList read fParameters write fParameters;
+
+    // The index of the active parameter.
+    //
+    // If provided, this is used in place of `SignatureHelp.activeParameter`.
+    //
+    // @since 3.16.0
+    property activeParameter: integer read fActiveParameter write fActiveParameter;
+  end;
+
+  { TSignatureInformationList }
+
+  TSignatureInformationList = specialize TGenericCollection<TSignatureInformation>;
+
+  { TSignatureList }
+
+  // Represents a collection of [signaure items](#SignatureItem) to
+  // be presented in the editor.
+  TSignatureList = class(TPersistent)
+  private
+    fItems: TSignatureInformationList;
+    fActiveParameter: integer;
+    fActiveSignature: integer;
+  public
+    destructor Destroy; override;
+  published
+    //
+    property ActiveParameter: integer read fActiveParameter write fActiveParameter;
+    //
+    property ActiveSignature: integer read fActiveSignature write fActiveSignature;
+
+    // The signature items.
+    property signatures: TSignatureInformationList read fItems write fItems;
+  end;
+
+  TSignatureHelp = class(specialize TLSPRequest<TSignatureHelpParams, TSignatureList>)
+    function Process(var Params: TSignatureHelpParams): TSignatureList; override;
+  end;
+
 implementation
+
+{ TParameterInformation }
+
+constructor TParameterInformation.Create;
+begin
+  FreeAndNil(fLabel);
+end;
+
+destructor TParameterInformation.Destroy;
+begin
+  inherited Destroy;
+end;
 
 { TCompletionParams }
 
@@ -276,6 +448,154 @@ begin
   inherited Destroy;
 end;
 
+{ TSignatureHelpContext }
+
+destructor TSignatureHelpContext.Destroy;
+begin
+  FreeAndNil(fActiveSignatureHelp);
+  inherited Destroy;
+end;
+
+{ TSignatureHelpParams }
+
+destructor TSignatureHelpParams.Destroy;
+begin
+  FreeAndNil(fContext);
+  inherited Destroy;
+end;
+
+{ TSignatureInformation }
+
+constructor TSignatureInformation.Create(ACollection: TCollection);
+begin
+  inherited Create(ACollection);
+  fParameters := TParameterInformationList.Create(TParameterInformation);
+end;
+
+destructor TSignatureInformation.Destroy;
+begin
+  FreeAndNil(fParameters);
+  inherited Destroy;
+end;
+
+{ TSignatureList }
+
+destructor TSignatureList.Destroy;
+begin
+  FreeAndNil(fItems);
+  inherited Destroy;
+end;
+
+{ TSignatureHelp }
+
+function TSignatureHelp.Process(var Params: TSignatureHelpParams
+  ): TSignatureList;
+var
+  Signature: TSignatureInformation;
+  Signatures: TSignatureInformationList;    
+var
+  URI: TURI;
+  Code: TCodeBuffer;
+  X, Y, Count, I, J: Integer;
+  ParamsString, Segment: string;
+  Param: TParameterInformation;
+  ProcStart: integer;
+  Offset: Integer;
+  SegmentLen: Integer;
+  CodeContexts: TCodeContextInfo;
+
+  Identifier: TIdentifierListItem;
+
+  paramsNode, n: TCodeTreeNode;
+begin
+  Result := TSignatureList.Create;
+  Signatures := TSignatureInformationList.Create;
+
+  Result.signatures := Signatures;
+
+  URI := ParseURI(Params.textDocument.uri);
+  Code := CodeToolBoss.FindFile(URI.Path + URI.Document);
+  //Code := CodeToolBoss.LoadFile(URI.Path + URI.Document, True, False);
+
+
+  assert(Code <> nil);
+
+  X := Params.position.character;
+  Y := Params.position.line;
+
+  CodeToolBoss.FindCodeContext(Code, X + 1, Y + 1, CodeContexts);
+
+  if CodeContexts = nil then // parse error
+    Exit;
+
+  assert(CodeContexts <> nil);
+
+  ProcStart := CodeContexts.StartPos;
+
+  // ProcStart point to the parenthesis before the first parameter.
+  // But we actually need a position *inside* the procedure identifier.
+  // Note that there may be whitespace, even newlines, between the first
+  // parenthesis and the procedure.
+  while (ProcStart > 1) and (Code.Source[ProcStart] in ['(', ' ', #13, #10, #9]) do
+    Dec(ProcStart);
+
+  Code.AbsoluteToLineCol(ProcStart, Y, X);
+
+  CodeToolBoss.IdentifierList.Prefix := CodeContexts.ProcName;
+
+  if CodeToolBoss.GatherIdentifiers(Code, X, Y) then
+  begin
+    Count := CodeToolBoss.IdentifierList.GetFilteredCount;
+    for I := 0 to Count - 1 do
+    begin
+      Identifier := CodeToolBoss.IdentifierList.FilteredItems[I];
+      if CompareText(Identifier.Identifier, CodeContexts.ProcName) = 0 then
+      begin
+        Signature := TSignatureInformation(Signatures.Add);
+        paramsNode := Identifier.Tool.GetProcParamList(identifier.Node);
+
+        assert(paramsNode <> nil);
+
+        ParamsString := '';
+
+        n := paramsNode.firstChild;
+
+        Offset := 0;
+        for J := 0 to paramsNode.ChildCount - 1 do
+        begin
+          Segment := Identifier.Tool.ExtractNode(n,[]);
+          Segment := StringReplace(Segment, ':', ': ', [rfReplaceAll]);
+          Segment := StringReplace(Segment, '=', ' = ', [rfReplaceAll]);
+
+          ParamsString := ParamsString + Segment;
+
+          SegmentLen := Pos(':', Segment) - 1;
+          if SegmentLen <= 0 then
+            SegmentLen := Length(Segment);
+
+          if J <> paramsNode.ChildCount - 1 then
+            ParamsString := ParamsString + ', ';
+
+          Param := TParameterInformation(Signature.parameters.Add);
+          Param.&label := TIntegerPair.Create(Offset, Offset + SegmentLen);
+
+          Offset := Length(ParamsString);
+
+          n := n.NextBrother;
+        end;
+
+        Signature.&label := ParamsString;
+      end;
+    end;
+  end else begin
+    if CodeToolBoss.ErrorMessage<>'' then
+      writeln(stderr, 'Parse error: ',CodeToolBoss.ErrorMessage)
+    else
+      writeln(stderr, 'Error: no context');
+  end;
+
+end;
+
 { TCompletion }
 
 function TCompletion.Process(var Params: TCompletionParams): TCompletionList;
@@ -291,6 +611,9 @@ begin with Params do
   begin
     URI := ParseURI(textDocument.uri);
     Code := CodeToolBoss.FindFile(URI.Path + URI.Document);
+    //Code := CodeToolBoss.LoadFile(URI.Path + URI.Document,True,False);
+    assert(Code <> nil);
+
     X := position.character;
     Y := position.line;
     Line := Code.GetLine(Y);
@@ -298,7 +621,8 @@ begin with Params do
     CodeToolBoss.IdentifierList.Prefix := Copy(Line, PStart, PEnd - PStart);
 
     Completions := TCompletionItems.Create;
-    if CodeToolBoss.GatherIdentifiers(Code,X + 1,Y + 1) then
+
+    if CodeToolBoss.GatherIdentifiers(Code, X + 1, Y + 1) then
     begin
       Count := CodeToolBoss.IdentifierList.GetFilteredCount;
       for I := 0 to Count - 1 do
@@ -306,11 +630,11 @@ begin with Params do
         Identifier := CodeToolBoss.IdentifierList.FilteredItems[I];
         Completion := TCompletionItem(Completions.Add);
         Completion.insertText := Identifier.Identifier;
-        Completion.detail:=Identifier.Node.DescAsString;
+        Completion.detail := Identifier.Node.DescAsString;
         Completion.insertTextFormat := TInsertTextFormat.PlainText;
       end;
     end else begin
-      if CodeToolBoss.ErrorMessage<>'' then
+      if CodeToolBoss.ErrorMessage <> '' then
         writeln(stderr, 'Parse error: ',CodeToolBoss.ErrorMessage)
       else
         writeln(stderr, 'Error: no context');
@@ -323,5 +647,6 @@ end;
 
 initialization
   LSPHandlerManager.RegisterHandler('textDocument/completion', TCompletion);
+  LSPHandlerManager.RegisterHandler('textDocument/signatureHelp', TSignatureHelp);
 end.
 

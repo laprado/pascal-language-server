@@ -61,6 +61,7 @@ type
 
   TServerCapabilities = class(TPersistent)
   private
+    fSignatureHelpProvider: TSignatureHelpOptions;
     fTextDocumentSync: TTextDocumentSyncOptions;
     fCompletionProvider: TCompletionOptions;
   public
@@ -69,9 +70,13 @@ type
   published
     property textDocumentSync: TTextDocumentSyncOptions read fTextDocumentSync write fTextDocumentSync;
     property completionProvider: TCompletionOptions read fCompletionProvider write fCompletionProvider;
+    property signatureHelpProvider: TSignatureHelpOptions read fSignatureHelpProvider write fSignatureHelpProvider;
   end;
 
+
+
 implementation
+
 
 { TClientCapabilities }
 
@@ -88,12 +93,21 @@ constructor TServerCapabilities.Create;
 begin
   textDocumentSync := TTextDocumentSyncOptions.Create;
   completionProvider := TCompletionOptions.Create;
+  signatureHelpProvider := TSignatureHelpOptions.Create;
+end;
+
+type
+  TCharSet = set of char;
+
+function foo(x: TCharSet = ['a', 'b']): string;
+begin
 end;
 
 destructor TServerCapabilities.Destroy;
 begin
   FreeAndNil(fTextDocumentSync);
   FreeAndNil(fCompletionProvider);
+  FreeAndNil(fSignatureHelpProvider);
 
   inherited Destroy;
 end;
