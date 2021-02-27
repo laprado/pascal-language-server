@@ -102,21 +102,36 @@ end;
 
 var
   InputStream: TStream;
+  Transcript:  TStream;
+  Tee:         TStream;
   InputReader: TBufferedReader;
 
 begin
   InputStream := nil;
   InputReader := nil;
+  Transcript  := nil;
+  Tee         := nil;
 
   try
     InputStream := TIOStream.Create(iosInput);
-    //InputStream := TFileStream.Create('/Users/isopod/dev/pascal-language-server/test.txt', fmOpenRead);
+
+    {$IF 1}
+    Transcript := TFileStream.Create('transcript.txt', fmCreate);
+    Tee := TTeeStream.Create(InputStream, Transcript);
+    InputReader := TBufferedReader.Create(Tee);
+    {$ELSE}
+    InputStream := TFileStream.Create('transcript.txt', fmOpenRead);
     InputReader := TBufferedReader.Create(InputStream);
+    {$ENDIF}
 
     Main(InputReader);
   finally
     if Assigned(InputStream) then
       FreeAndNil(InputStream);
+    if Assigned(Transcript) then
+      FreeAndNil(Transcript);
+    if Assigned(Tee) then
+      FreeAndNil(Tee);
     if Assigned(InputReader) then
       FreeAndNil(InputReader);
   end;

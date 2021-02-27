@@ -30,8 +30,35 @@ type
     property Underlying: TStream read FUnderlying;
   end;
 
+  { TTeeStream }
+
+  TTeeStream = class(TStream)
+  protected
+    FSource: TStream;
+    FCC:     TStream;
+  public
+    constructor Create(Source, CC: TStream);
+    function Read(var Buffer; Count: Longint): Longint; override;
+  end;
+
 
 implementation
+
+{ TTeeStream }
+
+constructor TTeeStream.Create(Source, CC: TStream);
+begin
+  inherited Create;
+  FSource := Source;
+  FCC     := CC;
+end;
+
+function TTeeStream.Read(var Buffer; Count: Longint): Longint;
+begin
+  Result := FSource.Read(Buffer, Count);
+  if Result > 0 then
+    FCC.WriteBuffer(Buffer, Result);
+end;
 
 { TBufferedReader }
 
