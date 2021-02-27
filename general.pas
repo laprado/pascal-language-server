@@ -101,7 +101,7 @@ type
 implementation
 
 uses
-  fileutil, DOM, XMLRead, udebug;
+  fileutil, DOM, XMLRead, udebug, packages;
 
 { TInitializeParams }
 
@@ -120,85 +120,38 @@ begin
 end;
 
 { TInitialize }
-type
-  TPaths = record
-    // Search path for units (OtherUnitFiles)
-    UnitPath:    String;
-    // Search path for includes (IncludeFiles)
-    IncludePath: String;
-    // Additional sources, not passed to compiler (SrcFiles)
-    SrcPath:     String;
-  end;
 
-procedure AddPathsFromPackage(const FileName: String; const Dir: String;
-  var Paths: TPaths);
+procedure AddPathsFromPackage(const FileName: String; var Paths: TPaths);
 var
-  Doc: TXMLDocument;
-  Root, Package, CompilerOptions, SearchPaths: TDomNode;
-
-  function GetAdditionalPaths(const What: String): String;
-  var
-    Node: TDomNode;
-    Segments: TStringArray;
-    S, Segment, AbsSegment: String;
-  begin
-    Result := '';
-
-    Node := SearchPaths.FindNode(What);
-    if Assigned(Node) then
-      Node := Node.Attributes.GetNamedItem('Value');
-    if not Assigned(Node) then
-      Exit;
-
-    S := Node.NodeValue;
-    Segments := S.Split([';'], TStringSplitOptions.ExcludeEmpty);
-
-    for Segment in Segments do
-    begin
-      AbsSegment := CreateAbsolutePath(Segment, Dir);
-      Result     := Result + ';' + AbsSegment;
-    end;
-  end;
-
+  Pkg: TPackage;
+  Dep: TDependency;
+  DepPath: String;
 begin
+  Pkg := GetPackageOrProject(FileName);
+  Paths.IncludePath := Paths.IncludePath + ';' + Pkg.Paths.IncludePath;
+  Paths.UnitPath    := Paths.UnitPath    + ';' + Pkg.Paths.UnitPath;
+  Paths.SrcPath     := Paths.SrcPath     + ';' + Pkg.Paths.SrcPath;
 
-  try
-    ReadXMLFile(doc, filename);
-    if not Assigned(doc) then
-      Exit;
-
-    Root := Doc.DocumentElement;
-    if Root.NodeName <> 'CONFIG' then
-      Exit;
-
-    if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
-    begin    
-      Package := Root.FindNode('Package');
-      if not Assigned(Package) then
-        Exit;
-
-      CompilerOptions := Package.FindNode('CompilerOptions');
-      if not Assigned(CompilerOptions) then
-        Exit;
-    end
+  // Load dependencies
+  for Dep in Pkg.Dependencies do
+  begin
+    if Dep.Prefer then
+      DepPath := Dep.Path
     else
+      DepPath := LookupGlobalPackage(Dep.Name);
+
+    if DepPath = '' then
     begin
-      CompilerOptions := Root.FindNode('CompilerOptions');
-      if not Assigned(CompilerOptions) then
-        Exit;
+      DebugLog('Package not found: %s', [Dep.Name]);
+      continue;
     end;
 
-    SearchPaths := CompilerOptions.FindNode('SearchPaths');
-    if not Assigned(SearchPaths) then
-      Exit;
+    // TODO: Recurse properly
+    Pkg := GetPackageOrProject(DepPath);
+    Paths.IncludePath := Paths.IncludePath + ';' + Pkg.Paths.IncludePath;
+    Paths.UnitPath    := Paths.UnitPath    + ';' + Pkg.Paths.UnitPath;
+    Paths.SrcPath     := Paths.SrcPath     + ';' + Pkg.Paths.SrcPath;
 
-    Paths.IncludePath := Paths.IncludePath + GetAdditionalPaths('IncludeFiles');
-    Paths.UnitPath    := Paths.UnitPath    + GetAdditionalPaths('OtherUnitFiles');
-    Paths.SrcPath     := Paths.SrcPath     + GetAdditionalPaths('SrcPath');
-
-  finally
-    if Assigned(doc) then
-      FreeAndNil(doc);
   end;
 end;
 
@@ -213,6 +166,9 @@ var
   UnitPathTemplate: TDefineTemplate;
   SrcTemplate: TDefineTemplate;
 begin
+  if ExtractFileName(Dir) = '.git' then
+    Exit;
+
   Packages          := nil;
   SubDirectories    := nil;
 
@@ -223,7 +179,7 @@ begin
   try
     Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
     for i := 0 to Packages.Count - 1 do
-      AddPathsFromPackage(Packages[i], Dir, Paths);
+      AddPathsFromPackage(Packages[i], Paths);
 
     if Packages.Count = 0 then
     begin
