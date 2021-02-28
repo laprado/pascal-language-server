@@ -56,7 +56,7 @@ implementation
 
 uses
   Classes, SysUtils, contnrs, FileUtil, DOM, XMLRead, LazFileUtils, 
-  udebug;
+  general, udebug;
 
 var
   PkgNameToPath: TFPStringHashTable;
@@ -125,8 +125,8 @@ var
     if not Assigned(SearchPaths) then
       Exit;
 
-    Package.Paths.IncludePath := Dir + ';' + GetAdditionalPaths(SearchPaths, 'IncludeFiles');
-    Package.Paths.UnitPath    := Dir + ';' + GetAdditionalPaths(SearchPaths, 'OtherUnitFiles');
+    Package.Paths.IncludePath := MergePaths([Dir, GetAdditionalPaths(SearchPaths, 'IncludeFiles')]);
+    Package.Paths.UnitPath    := MergePaths([Dir, GetAdditionalPaths(SearchPaths, 'OtherUnitFiles')]);
     Package.Paths.SrcPath     := GetAdditionalPaths(SearchPaths, 'SrcPath');
   end;
 
@@ -136,7 +136,11 @@ var
     Dep: TDependency;
     i, DepCount: integer;
   begin
-    Deps := Root.FindNode('RequiredPkgs');
+    if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
+      Deps := Root.FindNode('RequiredPkgs')
+    else
+      Deps := Root.FindNode('RequiredPackages');
+
     if not Assigned(Deps) then
       Exit;
 
@@ -194,11 +198,13 @@ begin
         Exit;
 
       if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
-      begin
-        Root := Root.FindNode('Package');
-        if not Assigned(Root) then
-          Exit;
-      end;
+        Root := Root.FindNode('Package')
+      else
+        Root := Root.FindNode('ProjectOptions');
+
+
+      if not Assigned(Root) then
+        Exit;
 
       LoadPaths;
       LoadDeps;

@@ -98,6 +98,8 @@ type
     procedure Process(var Params : TCancelParams); override;
   end;
 
+  function MergePaths(Paths: array of String): String;
+
 implementation
 
 uses
@@ -121,18 +123,88 @@ begin
   inherited Destroy;
 end;
 
-{ TInitialize }
+{ TInitialize }       
 
-procedure AddPathsFromPackage(const FileName: String; var Paths: TPaths);
+function MergePaths(Paths: array of String): String;
 var
-  Pkg: TPackage;
+  i: integer;
+begin
+  Result := '';
+  for i := low(Paths) to high(Paths) do
+  begin
+    if (Result <> '') and (Paths[i] <> '') then
+      Result := Result + ';' + Paths[i]
+    else if (Result = '') and (Paths[i] <> '') then
+      Result := Paths[i];
+  end;
+end;
+
+procedure AddPathsFromPackage(Pkg: TPackage; var Paths: TPaths); forward;
+
+// Add required search paths to package's directory (and its subdirectories).
+// XXX: Should we also add the search paths to all of the other unit directories
+// specified in the package? This would probably be the correct way, but any
+// sane project structure will have the package/project file in the root of its
+// source anyway.
+procedure ConfigurePackage(Pkg: TPackage; const Dir: String);
+var
+  DirectoryTemplate,
+  IncludeTemplate,
+  UnitPathTemplate,
+  SrcTemplate:       TDefineTemplate;
+
+  Paths:             TPaths;
+begin
+  if Pkg.Configured then
+    exit;
+  Pkg.Configured := True;
+  
+  DirectoryTemplate := TDefineTemplate.Create(
+    'Directory', '',
+    '', Dir,
+    da_Directory
+  );
+
+  Paths.IncludePath := '';
+  Paths.UnitPath    := '';
+  Paths.SrcPath     := '';
+  AddPathsFromPackage(Pkg, Paths);
+
+  UnitPathTemplate := TDefineTemplate.Create(
+    'Add to the UnitPath', '',
+    UnitPathMacroName, MergePaths([UnitPathMacro, Paths.UnitPath]),
+    da_DefineRecurse
+  );
+
+  IncludeTemplate := TDefineTemplate.Create(
+    'Add to the Include path', '',
+    IncludePathMacroName, MergePaths([IncludePathMacro, Paths.IncludePath]),
+    da_DefineRecurse
+  );
+
+  SrcTemplate := TDefineTemplate.Create(
+    'Add to the Src path', '',
+    SrcPathMacroName, MergePaths([SrcPathMacro, Paths.SrcPath]),
+    da_DefineRecurse
+  );
+
+  DirectoryTemplate.AddChild(UnitPathTemplate);
+  DirectoryTemplate.AddChild(IncludeTemplate);
+  DirectoryTemplate.AddChild(SrcTemplate);
+
+  CodeToolBoss.DefineTree.Add(DirectoryTemplate);
+end;
+
+// Add search paths from this package and all its dependencies to 'Paths'
+procedure AddPathsFromPackage(Pkg: TPackage; var Paths: TPaths);
+var
+  DepPkg: TPackage;
   Dep: TDependency;
   DepPath: String;
 begin
-  Pkg := GetPackageOrProject(FileName);
-  Paths.IncludePath := Paths.IncludePath + ';' + Pkg.Paths.IncludePath;
-  Paths.UnitPath    := Paths.UnitPath    + ';' + Pkg.Paths.UnitPath;
-  Paths.SrcPath     := Paths.SrcPath     + ';' + Pkg.Paths.SrcPath;
+  Paths.IncludePath := MergePaths([Paths.IncludePath, Pkg.Paths.IncludePath]);
+  Paths.UnitPath    := MergePaths([Paths.UnitPath,    Pkg.Paths.UnitPath]);
+  Paths.SrcPath     := MergePaths([Paths.SrcPath,     Pkg.Paths.SrcPath]);
 
   // Load dependencies
   for Dep in Pkg.Dependencies do
@@ -148,25 +220,43 @@ begin
       continue;
     end;
 
-    // TODO: Recurse properly
-    Pkg := GetPackageOrProject(DepPath);
-    Paths.IncludePath := Paths.IncludePath + ';' + Pkg.Paths.IncludePath;
-    Paths.UnitPath    := Paths.UnitPath    + ';' + Pkg.Paths.UnitPath;
-    Paths.SrcPath     := Paths.SrcPath     + ';' + Pkg.Paths.SrcPath;
+    DebugLog('* Dependency: %s', [Dep.Name]);
+
+    DepPkg := GetPackageOrProject(DepPath);
+
+    // Add search paths for package itself
+    ConfigurePackage(DepPkg, ExtractFilePath(DepPath));
+    // Add transitive paths (2nd, 3rd, ..., n-th degree dependencies)
+    // TODO: Not terribly efficient, we should memoize these, and also probably
+    // deduplicate segments.
+    AddPathsFromPackage(DepPkg, Paths);
+
+    // Add Paths
+    Paths.IncludePath := MergePaths([Paths.IncludePath, DepPkg.Paths.IncludePath]);
+    Paths.UnitPath    := MergePaths([Paths.UnitPath,    DepPkg.Paths.UnitPath]);
+    Paths.SrcPath     := MergePaths([Paths.SrcPath,     DepPkg.Paths.SrcPath]);
 
   end;
 end;
 
-procedure SetupPaths(const Dir: string; const ParentPaths: TPaths);
+// Use heuristic to add search paths to the directory 'Dir'.
+// If there are any projects (.lpi) or packages (.lpk) in the directory, use
+// (only) their search paths. Otherwise, inherit the search paths from the
+// parent directory ('ParentPaths').
+// XXX: Should we also add the search paths to other UnitPaths mentioned in the
+// project/package files? See also comment before ConfigurePackage.
+procedure ConfigurePaths(const Dir: string; const ParentPaths: TPaths);
 var
-  Packages, SubDirectories: TStringList;
-  i: integer;
-  Paths: TPaths;
+  Packages, 
+  SubDirectories:    TStringList;
+  i:                 integer;
+  Paths:             TPaths;
 
-  DirectoryTemplate: TDefineTemplate;
-  IncludeTemplate: TDefineTemplate;
-  UnitPathTemplate: TDefineTemplate;
-  SrcTemplate: TDefineTemplate;
+  DirectoryTemplate,
+  IncludeTemplate,
+  UnitPathTemplate,
+  SrcTemplate:       TDefineTemplate;
+  Pkg:               TPackage;
 begin
   if ExtractFileName(Dir) = '.git' then
     Exit;
@@ -181,35 +271,42 @@ begin
   try
     Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
     for i := 0 to Packages.Count - 1 do
-      AddPathsFromPackage(Packages[i], Paths);
+    begin
+      Pkg := GetPackageOrProject(Packages[i]);
+      AddPathsFromPackage(Pkg, Paths);
+    end;
 
     if Packages.Count = 0 then
     begin
-      Paths.IncludePath := Paths.IncludePath + ';' + ParentPaths.IncludePath;
-      Paths.UnitPath    := Paths.UnitPath    + ';' + ParentPaths.UnitPath;
-      Paths.SrcPath     := Paths.SrcPath     + ';' + ParentPaths.SrcPath;
+      Paths.IncludePath := MergePaths([Paths.IncludePath, ParentPaths.IncludePath]);
+      Paths.UnitPath    := MergePaths([Paths.UnitPath,    ParentPaths.UnitPath]);
+      Paths.SrcPath     := MergePaths([Paths.SrcPath,     ParentPaths.SrcPath]);
     end;
 
     // Inform CodeToolBoss
 
     DirectoryTemplate := TDefineTemplate.Create(
       'Directory', '',
-      '', Dir,  da_Directory
+      '', Dir,
+      da_Directory
     );
 
     UnitPathTemplate := TDefineTemplate.Create(
       'Add to the UnitPath', '',
-      UnitPathMacroName, UnitPathMacro+';'+Paths.UnitPath, da_Define
+      UnitPathMacroName, MergePaths([UnitPathMacro, Paths.UnitPath]),
+      da_Define
     );
 
     IncludeTemplate := TDefineTemplate.Create(
       'Add to the Include path', '',
-      IncludePathMacroName, IncludePathMacro+';'+Paths.IncludePath, da_Define
+      IncludePathMacroName, MergePaths([IncludePathMacro, Paths.IncludePath]),
+      da_Define
     );
 
     SrcTemplate := TDefineTemplate.Create(
       'Add to the Src path', '',
-      SrcPathMacroName, SrcPathMacro+';'+Paths.SrcPath, da_Define
+      SrcPathMacroName, MergePaths([SrcPathMacro, Paths.SrcPath]),
+      da_Define
     );
 
     DirectoryTemplate.AddChild(UnitPathTemplate);
@@ -225,7 +322,7 @@ begin
 
     SubDirectories := FindAllDirectories(Dir, False);
     for i := 0 to SubDirectories.Count - 1 do
-      SetupPaths(SubDirectories[i], Paths);
+      ConfigurePaths(SubDirectories[i], Paths);
   finally
     if Assigned(Packages) then
       FreeAndNil(Packages);
@@ -239,7 +336,6 @@ var
   CodeToolsOptions: TCodeToolsOptions;
 
   Directory: String;
-  DirectoryTemplate, UnitPathTemplate: TDefineTemplate;
 
   Paths: TPaths;
 begin
@@ -273,7 +369,7 @@ begin
     IdentifierList.SortForScope := True;
   end;
 
-  SetupPaths(Directory, Paths);
+  ConfigurePaths(Directory, Paths);
 
   Result := TInitializeResult.Create;
   Result.capabilities := TServerCapabilities.Create;
