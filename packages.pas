@@ -15,25 +15,48 @@ type
   end;
 
   TDependency = record
+    // Name of the package, e.g. 'LCLBase'
     Name: String;
+    // Projects may hardcode a path to a package. If a path was hardcoded, Path
+    // will contain the expanded path, otherwise will be empty string.
     Path: String;
+    // Whether the hardcoded path should take precedence over a global package
+    // of the same name. Currently we only use the hardcoded Path if Prefer is
+    // true.
     Prefer: Boolean;
   end;
 
+  { TPackage }
+
   TPackage = class
+    // Valid: True if the package was found, False otherwise. If False, this
+    // is a dummy object whose only purpose is to prevent us from trying to load
+    // a non-existing package multiple times.
     Valid: Boolean;
+    // Configured: True if the defines (IncludePath, UnitPath, SrcPath) have
+    // been set for this package. This is so we don't initialize multiple times.
+    Configured: Boolean;
+    // Expanded search paths for this package
     Paths: TPaths;
+    // List of dependencies of this package
     Dependencies: array of TDependency;
+    constructor Create;
   end;
 
+  // Get package or project information from a file. The file must end in .lpk
+  // if it is a package, or .lpi if it is a project.
+  // Results are cached. If the file could not be loaded, the Valid member of
+  // the result will be set to False.
   function GetPackageOrProject(const FileName: String): TPackage;
+  // Get the location of a global package by its name.
+  // E.g. 'LCLBase'  -> '/Applications/Lazarus/lcl/lclbase.lpk'
   function LookupGlobalPackage(const Name: String): String;
 
 implementation
 
 uses
   Classes, SysUtils, contnrs, FileUtil, DOM, XMLRead, LazFileUtils, 
-  CodeTree, udebug;
+  udebug;
 
 var
   PkgNameToPath: TFPStringHashTable;
@@ -63,7 +86,7 @@ procedure LoadPackageOrProject(const FileName: String);
 var
   Doc: TXMLDocument;
   Dir: String;
-  Root, Deps: TDomNode;
+  Root: TDomNode;
   Package: TPackage;
 
   function GetAdditionalPaths(SearchPaths: TDomNode; const What: String): String;
@@ -204,6 +227,14 @@ end;
 function LookupGlobalPackage(const Name: String): String;
 begin
   Result := PkgNameToPath[UpperCase(Name)];
+end;
+
+{ TPackage }
+
+constructor TPackage.Create;
+begin
+  Valid      := False;
+  Configured := False;
 end;
 
 initialization

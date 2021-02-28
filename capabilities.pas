@@ -96,13 +96,6 @@ begin
   signatureHelpProvider := TSignatureHelpOptions.Create;
 end;
 
-type
-  TCharSet = set of char;
-
-function foo(x: TCharSet = ['a', 'b']): string;
-begin
-end;
-
 destructor TServerCapabilities.Destroy;
 begin
   FreeAndNil(fTextDocumentSync);

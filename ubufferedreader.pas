@@ -4,7 +4,6 @@ unit ubufferedreader;
 
 interface
 
-
 uses
   Classes, SysUtils;
 
@@ -40,7 +39,6 @@ type
     constructor Create(Source, CC: TStream);
     function Read(var Buffer; Count: Longint): Longint; override;
   end;
-
 
 implementation
 
