@@ -24,7 +24,7 @@ unit synchronization;
 interface
 
 uses
-  SysUtils, Classes, URIParser, CodeToolManager, CodeCache,
+  SysUtils, Classes,
   lsp, basic;
 
 type
@@ -97,6 +97,9 @@ type
   end;
 
 implementation
+
+uses
+  URIParser, CodeToolManager, CodeCache;
 
 { TDidOpenTextDocumentParams }
 

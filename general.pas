@@ -24,8 +24,8 @@ unit general;
 interface
 
 uses
-  SysUtils, Classes, CodeToolManager, CodeToolsConfig, URIParser, LazUTF8,
-  lsp, capabilities, DefineTemplates;
+  SysUtils, Classes,
+  capabilities, lsp;
 
 type
 
@@ -101,7 +101,9 @@ type
 implementation
 
 uses
-  fileutil, DOM, XMLRead, udebug, packages;
+  CodeToolManager, CodeToolsConfig, URIParser, LazUTF8, DefineTemplates,
+  fileutil, DOM, XMLRead, 
+  udebug, packages;
 
 { TInitializeParams }
 

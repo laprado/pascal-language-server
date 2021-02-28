@@ -4,11 +4,6 @@ unit packages;
 
 interface
 
-uses
-  Classes, SysUtils, contnrs,
-  CodeToolManager, CodeCache, IdentCompletionTool, BasicCodeTools,
-  PascalParserTool, CodeTree;
-
 type
   TPaths = record
     // Search path for units (OtherUnitFiles)
@@ -31,15 +26,14 @@ type
     Dependencies: array of TDependency;
   end;
 
-
   function GetPackageOrProject(const FileName: String): TPackage;
   function LookupGlobalPackage(const Name: String): String;
 
 implementation
 
 uses
-  FileUtil, DOM, XMLRead, LazFileUtils, udebug;
-
+  Classes, SysUtils, contnrs, FileUtil, DOM, XMLRead, LazFileUtils, 
+  CodeTree, udebug;
 
 var
   PkgNameToPath: TFPStringHashTable;
