@@ -97,7 +97,7 @@ begin
           DebugLog('< Response: '#10'%s', [Copy(ResponseBody, 1, 2000)]);
         end
         else
-          DebugLog('< No Response');
+          DebugLog('< No Response'#10);
 
       finally
         if Assigned(Parser) then
@@ -132,11 +132,11 @@ begin
     InputStream := TIOStream.Create(iosInput);
 
     {$IF 1}
-    Transcript := TFileStream.Create('transcript.txt', fmCreate);
+    Transcript := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmCreate or fmOpenWrite);
     Tee := TTeeStream.Create(InputStream, Transcript);
     InputReader := TBufferedReader.Create(Tee);
     {$ELSE}
-    InputStream := TFileStream.Create('transcript.txt', fmOpenRead);
+    InputStream := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmOpenRead);
     InputReader := TBufferedReader.Create(InputStream);
     {$ENDIF}
 

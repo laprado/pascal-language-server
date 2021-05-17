@@ -139,21 +139,131 @@ begin
   end;
 end;
 
-procedure AddPathsFromPackage(Pkg: TPackage; var Paths: TPaths); forward;
+procedure ResolveDeps(Pkg: TPackage);
+var
+  Dep: ^TDependency;
+  DepPath: String;
+  i: integer;
+begin
+  if Pkg.DidResolveDependencies then
+    exit;
+
+  Pkg.DidResolveDependencies := True;
+
+  for i := low(Pkg.Dependencies) to high(Pkg.Dependencies) do
+  begin
+    Dep := @Pkg.Dependencies[i];
+
+    DepPath := LookupGlobalPackage(Dep^.Name);
+    if (Dep^.Prefer) or (DepPath = '') then
+      DepPath := Dep^.Path;
+
+    if DepPath = '' then
+    begin
+      DebugLog('* Dependency %s: not found', [Dep^.Name]);
+      continue;
+    end;
+
+    DebugLog('* Dependency: %s -> %s', [Dep^.Name, DepPath]);
+
+    Dep^.Package := GetPackageOrProject(DepPath);
+
+    // Add ourselves to the RequiredBy list of the dependency.
+    SetLength(Dep^.Package.RequiredBy, Length(Dep^.Package.RequiredBy) + 1);
+    Dep^.Package.RequiredBy[High(Dep^.Package.RequiredBy)] := Pkg;
+
+    // Recurse
+    ResolveDeps(Dep^.Package);
+  end;
+end;
+
+procedure GuessMissingDependencies(Pkg: TPackage);
+var
+  Dep: ^TDependency;
+  i: integer;
+
+  function GuessDependency(Node: TPackage; DepName: String): TPackage;
+  var
+    j: integer;
+  begin
+    Result := nil;
+
+    if Node.Visited then
+      exit;
+
+    Node.Visited := True;
+    try
+      for j := low(Node.Dependencies) to high(Node.Dependencies) do
+      begin
+        if (UpperCase(DepName) = UpperCase(Node.Dependencies[j].Name)) and
+           Assigned(Node.Dependencies[j].Package) then
+        begin
+          Result := Node.Dependencies[j].Package;
+          exit;
+        end;
+      end;
+
+      // Not found, recurse
+
+      for j := low(Node.RequiredBy) to high(Node.RequiredBy) do
+      begin
+        Result := GuessDependency(Node.RequiredBy[j], DepName);
+        if Assigned(Result) then
+          exit;
+      end;
+
+    finally
+      Node.Visited := False;
+    end;
+  end;
+begin
+  for i := low(Pkg.Dependencies) to high(Pkg.Dependencies) do
+  begin
+    Dep := @Pkg.Dependencies[i];
+    if Assigned(Dep^.Package) then
+      continue;
+
+    Dep^.Package := GuessDependency(Pkg, Dep^.Name);
+  end;
+end;
+
+procedure ResolvePaths(Pkg: TPackage);
+var
+  Dep: TDependency;
+begin
+  if Pkg.DidResolvePaths then
+    exit;
+
+  Pkg.DidResolvePaths := True;
+
+  Pkg.ResolvedPaths := Pkg.Paths;
+
+  for Dep in Pkg.Dependencies do
+  begin
+    if not Assigned(Dep.Package) then
+      continue;
+
+    // Recurse
+    ResolvePaths(Dep.Package);
+
+    Pkg.ResolvedPaths.IncludePath := MergePaths([Pkg.ResolvedPaths.IncludePath, Dep.Package.ResolvedPaths.IncludePath]);
+    Pkg.ResolvedPaths.UnitPath    := MergePaths([Pkg.ResolvedPaths.UnitPath,    Dep.Package.ResolvedPaths.UnitPath]);
+    Pkg.ResolvedPaths.SrcPath     := MergePaths([Pkg.ResolvedPaths.SrcPath,     Dep.Package.ResolvedPaths.SrcPath]);
+  end;
+end;
 
 // Add required search paths to package's directory (and its subdirectories).
-// XXX: Should we also add the search paths to all of the other unit directories
+// TODO: Should we also add the search paths to all of the other unit directories
 // specified in the package? This would probably be the correct way, but any
 // sane project structure will have the package/project file in the root of its
 // source anyway.
-procedure ConfigurePackage(Pkg: TPackage; const Dir: String);
+procedure ConfigurePackage(Pkg: TPackage);
 var
   DirectoryTemplate,
   IncludeTemplate,
   UnitPathTemplate,
   SrcTemplate:       TDefineTemplate;
-
-  Paths:             TPaths;
+  Dep: TDependency;
 begin
   if Pkg.Configured then
     exit;
@@ -161,30 +271,25 @@ begin
   
   DirectoryTemplate := TDefineTemplate.Create(
     'Directory', '',
-    '', Dir,
+    '', Pkg.Dir,
     da_Directory
   );
 
-  Paths.IncludePath := '';
-  Paths.UnitPath    := '';
-  Paths.SrcPath     := '';
-  AddPathsFromPackage(Pkg, Paths);
-
   UnitPathTemplate := TDefineTemplate.Create(
     'Add to the UnitPath', '',
-    UnitPathMacroName, MergePaths([UnitPathMacro, Paths.UnitPath]),
+    UnitPathMacroName, MergePaths([UnitPathMacro, Pkg.ResolvedPaths.UnitPath]),
     da_DefineRecurse
   );
 
   IncludeTemplate := TDefineTemplate.Create(
     'Add to the Include path', '',
-    IncludePathMacroName, MergePaths([IncludePathMacro, Paths.IncludePath]),
+    IncludePathMacroName, MergePaths([IncludePathMacro, Pkg.ResolvedPaths.IncludePath]),
     da_DefineRecurse
   );
 
   SrcTemplate := TDefineTemplate.Create(
     'Add to the Src path', '',
-    SrcPathMacroName, MergePaths([SrcPathMacro, Paths.SrcPath]),
+    SrcPathMacroName, MergePaths([SrcPathMacro, Pkg.ResolvedPaths.SrcPath]),
     da_DefineRecurse
   );
 
@@ -193,49 +298,93 @@ begin
   DirectoryTemplate.AddChild(SrcTemplate);
 
   CodeToolBoss.DefineTree.Add(DirectoryTemplate);
-end;
 
-// Add search paths from this package and all its dependencies to 'Paths'
-procedure AddPathsFromPackage(Pkg: TPackage; var Paths: TPaths);
-var
-  DepPkg: TPackage;
-  Dep: TDependency;
-  DepPath: String;
-begin
-  Paths.IncludePath := MergePaths([Paths.IncludePath, Pkg.Paths.IncludePath]);
-  Paths.UnitPath    := MergePaths([Paths.UnitPath,    Pkg.Paths.UnitPath]);
-  Paths.SrcPath     := MergePaths([Paths.SrcPath,     Pkg.Paths.SrcPath]);
-
-  // Load dependencies
+  // Recurse
   for Dep in Pkg.Dependencies do
   begin
-    if Dep.Prefer then
-      DepPath := Dep.Path
-    else
-      DepPath := LookupGlobalPackage(Dep.Name);
-
-    if DepPath = '' then
-    begin
-      DebugLog('Package not found: %s', [Dep.Name]);
+    if not Assigned(Dep.Package) then
       continue;
+    ConfigurePackage(Dep.Package);
+  end;
+end;
+
+function IgnoreDirectory(const Dir: string): Boolean;
+var
+  DirName: string;
+begin
+  Dirname := lowercase(ExtractFileName(Dir));
+  Result := 
+    (DirName = '.git')                              or 
+    ((Length(DirName) >= 1) and (DirName[1] = '.')) or
+    (DirName = 'backup')                            or 
+    (DirName = 'lib')                               or 
+    (Pos('.dsym', DirName) > 0)                     or
+    (Pos('.app', DirName) > 0);
+end;
+
+procedure LoadAllPackagesUnderPath(const Dir: string);
+var
+  Packages,
+  SubDirectories:    TStringList;
+  i:                 integer;     
+  Pkg:               TPackage;
+begin
+  if IgnoreDirectory(Dir) then
+    Exit;
+
+  try
+    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+
+    for i := 0 to Packages.Count - 1 do
+    begin
+      Pkg := GetPackageOrProject(Packages[i]);
+      ResolveDeps(Pkg);
     end;
 
-    DebugLog('* Dependency: %s', [Dep.Name]);
+    // Recurse into child directories
 
-    DepPkg := GetPackageOrProject(DepPath);
+    SubDirectories := FindAllDirectories(Dir, False);
+    for i := 0 to SubDirectories.Count - 1 do
+      LoadAllPackagesUnderPath(SubDirectories[i]);
 
-    // Add search paths for package itself
-    ConfigurePackage(DepPkg, ExtractFilePath(DepPath));
-    // Add transitive paths (2nd, 3rd, ..., n-th degree dependencies)
-    // TODO: Not terribly efficient, we should memoize these, and also probably
-    // deduplicate segments.
-    AddPathsFromPackage(DepPkg, Paths);
+  finally
+    if Assigned(Packages) then
+      FreeAndNil(Packages);
+    if Assigned(Packages) then
+      FreeAndNil(SubDirectories);
+  end;
+end;
 
-    // Add Paths
-    Paths.IncludePath := MergePaths([Paths.IncludePath, DepPkg.Paths.IncludePath]);
-    Paths.UnitPath    := MergePaths([Paths.UnitPath,    DepPkg.Paths.UnitPath]);
-    Paths.SrcPath     := MergePaths([Paths.SrcPath,     DepPkg.Paths.SrcPath]);
+procedure GuessMissingDepsForAllPackages(const Dir: string);
+var
+  Packages,
+  SubDirectories:    TStringList;
+  i:                 integer;
+  Pkg:               TPackage;
+begin
+  if IgnoreDirectory(Dir) then
+    Exit;
 
+  try
+    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+
+    for i := 0 to Packages.Count - 1 do
+    begin
+      Pkg := GetPackageOrProject(Packages[i]);
+      GuessMissingDependencies(Pkg);
+    end;
+
+    // Recurse into child directories
+
+    SubDirectories := FindAllDirectories(Dir, False);
+    for i := 0 to SubDirectories.Count - 1 do
+      GuessMissingDepsForAllPackages(SubDirectories[i]);
+
+  finally
+    if Assigned(Packages) then
+      FreeAndNil(Packages);
+    if Assigned(Packages) then
+      FreeAndNil(SubDirectories);
   end;
 end;
 
@@ -243,7 +392,7 @@ end;
 // If there are any projects (.lpi) or packages (.lpk) in the directory, use
 // (only) their search paths. Otherwise, inherit the search paths from the
 // parent directory ('ParentPaths').
-// XXX: Should we also add the search paths to other UnitPaths mentioned in the
+// TODO: Should we also add the search paths to other UnitPaths mentioned in the
 // project/package files? See also comment before ConfigurePackage.
 procedure ConfigurePaths(const Dir: string; const ParentPaths: TPaths);
 var
@@ -257,8 +406,9 @@ var
   UnitPathTemplate,
   SrcTemplate:       TDefineTemplate;
   Pkg:               TPackage;
+
 begin
-  if ExtractFileName(Dir) = '.git' then
+  if IgnoreDirectory(Dir) then
     Exit;
 
   Packages          := nil;
@@ -269,11 +419,32 @@ begin
   Paths.SrcPath     := '';
 
   try
+    DebugLog('--- %s ---', [Dir]);
+
     Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+
+    // 1. Recursively merge search paths
     for i := 0 to Packages.Count - 1 do
     begin
       Pkg := GetPackageOrProject(Packages[i]);
-      AddPathsFromPackage(Pkg, Paths);
+      ResolvePaths(Pkg);
+    end;
+
+    // 2. Configure package directories
+    for i := 0 to Packages.Count - 1 do
+    begin
+      Pkg := GetPackageOrProject(Packages[i]);
+      ConfigurePackage(Pkg);
+    end;
+
+    // 3. Add merged search paths for all packages/projects in directory to
+    //    search path of directory.
+    for i := 0 to Packages.Count - 1 do
+    begin
+      Pkg := GetPackageOrProject(Packages[i]);
+      Paths.IncludePath := MergePaths([Paths.IncludePath, Pkg.ResolvedPaths.IncludePath]);
+      Paths.UnitPath    := MergePaths([Paths.UnitPath,    Pkg.ResolvedPaths.UnitPath]);
+      Paths.SrcPath     := MergePaths([Paths.SrcPath,     Pkg.ResolvedPaths.SrcPath]);
     end;
 
     if Packages.Count = 0 then
@@ -315,7 +486,6 @@ begin
 
     CodeToolBoss.DefineTree.Add(DirectoryTemplate);
 
-    DebugLog('--- %s ---', [Dir]);
     DebugLog('  UnitPath: %s', [Paths.UnitPath]);
 
     // Recurse into child directories
@@ -369,6 +539,8 @@ begin
     IdentifierList.SortForScope := True;
   end;
 
+  LoadAllPackagesUnderPath(Directory);
+  GuessMissingDepsForAllPackages(Directory);
   ConfigurePaths(Directory, Paths);
 
   Result := TInitializeResult.Create;

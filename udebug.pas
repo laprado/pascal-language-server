@@ -19,7 +19,7 @@ var
 procedure InitDebugLog;
 begin
   if not Assigned(Debug) then
-    Debug := TFileStream.Create('/Users/isopod/paslslog', fmCreate);
+    Debug := TFileStream.Create('/Users/isopod/pasls-log', fmCreate);
 end;
 
 procedure DebugLog(const message: String);

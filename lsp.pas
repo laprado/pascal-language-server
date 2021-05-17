@@ -306,7 +306,7 @@ begin
     Result := inherited ExecuteMethod(AClassName, AMethodName, Params, ID, AContext);
   except
     on E: LSPException do // handle errors specific to LSP
-      Exit(CreateJSON2Error(E.Message, E.Code, ID.Clone, TransactionProperty))
+      Exit(CreateJSON2Error(E.Message+' in '+SysBackTraceStr(ExceptAddr), E.Code, ID.Clone, TransactionProperty))
     else raise;
   end;
 end;
