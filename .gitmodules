@@ -1,0 +1,3 @@
+[submodule "deps/jsonstream"]
+	path = deps/jsonstream
+	url = https://github.com/Isopod/jsonstream.git

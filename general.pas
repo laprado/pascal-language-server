@@ -24,80 +24,9 @@ unit general;
 interface
 
 uses
-  SysUtils, Classes,
-  capabilities, lsp;
+  SysUtils, Classes, jsonstream, capabilities, lsp;
 
-type
-
-  { TVoidParams }
-
-  TVoidParams = class(TPersistent);
-
-  { TInitializeParams }
-
-  TInitializeParams = class(TPersistent)
-  private
-    //fProcessId: string;
-    fRootUri: string;
-    fCapabilities: TClientCapabilities;
-  public
-    destructor Destroy; override;
-  published
-    //property processId: string read fProcessId write fProcessId;
-    property rootUri: string read fRootUri write fRootUri;
-    property capabilities: TClientCapabilities read fCapabilities write fCapabilities;
-  end;
-
-  { TInitializeResult }
-
-  TInitializeResult = class(TPersistent)
-  private
-    fCapabilities: TServerCapabilities;
-  public
-    destructor Destroy; override;
-  published
-    property capabilities: TServerCapabilities read fCapabilities write fCapabilities;
-  end;
-
-  { TInitialize }
-
-  TInitialize = class(specialize TLSPRequest<TInitializeParams, TInitializeResult>)
-    function Process(var Params : TInitializeParams): TInitializeResult; override;
-  end;
-
-  { TInitialized }
-
-  TInitialized = class(specialize TLSPNotification<TVoidParams>)
-    procedure Process(var Params : TVoidParams); override;
-  end;
-
-  { TCancelParams }
-
-  TCancelParams = class(TPersistent)
-  private
-    fId: Integer;
-  published
-    property id: Integer read fId write fId;
-  end;
-
-  { TShutdown }
-
-  TShutdown = class(specialize TLSPRequest<TVoidParams, TPersistent>)
-    function Process(var Params : TVoidParams): TPersistent; override;
-  end;
-
-  { TExit }
-
-  TExit = class(specialize TLSPNotification<TVoidParams>)
-    procedure Process(var Params : TVoidParams); override;
-  end;
-
-  { TCancel }
-
-  TCancel = class(specialize TLSPNotification<TCancelParams>)
-    procedure Process(var Params : TCancelParams); override;
-  end;
-
+  procedure Initialize(Reader: TJsonReader; Response: TJsonWriter);
   function MergePaths(Paths: array of String): String;
 
 implementation
@@ -107,23 +36,6 @@ uses
   fileutil, DOM, XMLRead, 
   udebug, packages;
 
-{ TInitializeParams }
-
-destructor TInitializeParams.Destroy;
-begin
-  FreeAndNil(fCapabilities);
-  inherited Destroy;
-end;
-
-{ TInitializeResult }
-
-destructor TInitializeResult.Destroy;
-begin
-  FreeAndNil(fCapabilities);
-  inherited Destroy;
-end;
-
-{ TInitialize }       
 
 function MergePaths(Paths: array of String): String;
 var
@@ -246,9 +158,18 @@ begin
     // Recurse
     ResolvePaths(Dep.Package);
 
-    Pkg.ResolvedPaths.IncludePath := MergePaths([Pkg.ResolvedPaths.IncludePath, Dep.Package.ResolvedPaths.IncludePath]);
-    Pkg.ResolvedPaths.UnitPath    := MergePaths([Pkg.ResolvedPaths.UnitPath,    Dep.Package.ResolvedPaths.UnitPath]);
-    Pkg.ResolvedPaths.SrcPath     := MergePaths([Pkg.ResolvedPaths.SrcPath,     Dep.Package.ResolvedPaths.SrcPath]);
+    Pkg.ResolvedPaths.IncludePath := MergePaths([
+      Pkg.ResolvedPaths.IncludePath,
+      Dep.Package.ResolvedPaths.IncludePath
+    ]);
+    Pkg.ResolvedPaths.UnitPath := MergePaths([
+      Pkg.ResolvedPaths.UnitPath,
+      Dep.Package.ResolvedPaths.UnitPath
+    ]);
+    Pkg.ResolvedPaths.SrcPath := MergePaths([
+      Pkg.ResolvedPaths.SrcPath,
+      Dep.Package.ResolvedPaths.SrcPath
+    ]);
   end;
 end;
 
@@ -501,87 +422,112 @@ begin
   end;
 end;
 
-function TInitialize.Process(var Params : TInitializeParams): TInitializeResult;
+procedure Initialize(Reader: TJsonReader; Response: TJsonWriter);
 var
   CodeToolsOptions: TCodeToolsOptions;
-
-  Directory: String;
-
-  Paths: TPaths;
+  Key:              string;
+  RootUri:          string;
+  Directory:        string;
+  Paths:            TPaths;
 begin
-  CodeToolsOptions := TCodeToolsOptions.Create;
+  if Reader.Dict then
+    while Reader.Advance <> jsDictEnd do
+      if Reader.Key(Key) and (Key = 'rootUri') then
+        Reader.Str(RootUri);
 
-  URIToFilename(Params.rootUri, Directory);
+  URIToFilename(RootUri, Directory);
+
+  CodeToolsOptions  := nil;
+  try
+    CodeToolsOptions := TCodeToolsOptions.Create;
+
+    with CodeToolsOptions do
+    begin
+      InitWithEnvironmentVariables;
+      ProjectDir      := Directory;
+
+      // Could be loaded from .lazarus/fpcdefines.xml ?
+      TargetOS        := 'Darwin';
+      TargetProcessor := 'x86_64';
+
+      // These could be loaded from .lazarus/environmentoptions.xml:
+      FPCSrcDir       := '/usr/local/share/fpcsrc/3.2.0';
+      LazarusSrcDir   := '/Applications/Lazarus';
+      FPCPath         := '/usr/local/bin/fpc';
+      TestPascalFile  := '/tmp/testfile1.pas';
+    end;
+
+    with CodeToolBoss do
+    begin
+      Init(CodeToolsOptions);
+      IdentifierList.SortForHistory := True;
+      IdentifierList.SortForScope   := True;
+    end;
+  finally
+    FreeAndNil(CodeToolsOptions);
+  end;
 
   Paths.IncludePath := '';
   Paths.UnitPath    := '';
   Paths.SrcPath     := '';
 
-  with CodeToolsOptions do
-  begin
-    InitWithEnvironmentVariables;
-    ProjectDir      := Directory;
-
-    // Could be loaded from .lazarus/fpcdefines.xml ?
-    TargetOS        := 'Darwin';
-    TargetProcessor := 'x86_64';
-
-    // These could be loaded from .lazarus/environmentoptions.xml:
-    FPCSrcDir       := '/usr/local/share/fpcsrc/3.2.0';
-    LazarusSrcDir   := '/Applications/Lazarus';
-    FPCPath         := '/usr/local/bin/fpc';
-    TestPascalFile  := '/tmp/testfile1.pas';
-  end;
-  with CodeToolBoss do
-  begin
-    Init(CodeToolsOptions);
-    IdentifierList.SortForHistory := True;
-    IdentifierList.SortForScope := True;
-  end;
-
   LoadAllPackagesUnderPath(Directory);
   GuessMissingDepsForAllPackages(Directory);
   ConfigurePaths(Directory, Paths);
 
-  Result := TInitializeResult.Create;
-  Result.capabilities := TServerCapabilities.Create;
+  Response.Dict;
+    {Response.Key('serverInfo');
+    Response.Dict;
+      Response.Key('name');
+      Response.Str('Pascal Language Server');
+    Response.DictEnd;  }
 
-  FreeAndNil(CodeToolsOptions);
-end;
+    Response.Key('capabilities');
+    Response.Dict;
+      Response.Key('textDocumentSync');
+      Response.Dict;
+        Response.Key('openClose');
+        Response.Bool(true);
 
-{ TInitialized }
+        Response.Key('change');
+        Response.Number(1); // 1 = Sync by sending full content, 2 = Incremental
+      Response.DictEnd;
 
-procedure TInitialized.Process(var Params : TVoidParams);
-begin
-  // do nothing
-end;
+      Response.Key('completionProvider');
+      Response.Dict;
+        Response.Key('triggerCharacters');
+        Response.Null;
 
-{ TShutdown }
+        Response.Key('allCommitCharacters');
+        Response.Null;
 
-function TShutdown.Process(var Params : TVoidParams): TPersistent;
-begin
-  // do nothing
-end;
+        Response.Key('resolveProvider');
+        Response.Bool(false);
+      Response.DictEnd;
 
-{ TExit }
+      Response.Key('signatureHelpProvider');
+      Response.Dict;
+        Response.Key('triggerCharacters');
+        Response.List;
+          Response.Str('(');
+          Response.Str(',');
+        Response.ListEnd;
 
-procedure TExit.Process(var Params : TVoidParams);
-begin
-  Halt(0);
-end;
-
-{ TCancel }
-
-procedure TCancel.Process(var Params : TCancelParams);
-begin
-  // not supported
+        Response.Key('retriggerCharacters');
+        Response.List;
+        Response.ListEnd;
+      Response.DictEnd;
+    Response.DictEnd;
+  Response.DictEnd;
 end;
 
 initialization
+  {
   LSPHandlerManager.RegisterHandler('initialize', TInitialize);
   LSPHandlerManager.RegisterHandler('initialized', TInitialized);
   LSPHandlerManager.RegisterHandler('shutdown', TShutdown);
   LSPHandlerManager.RegisterHandler('exit', TExit);
   LSPHandlerManager.RegisterHandler('$/cancelRequest', TCancel);
+  }
 end.
 

@@ -18,8 +18,9 @@ type
     FBufCapacity: LongInt;
     FBufSize:     LongInt;
     FBufOffset:   LongInt;
+    FOwnsUnderlying: Boolean;
   public
-    constructor Create(Underlying: TStream);
+    constructor Create(Underlying: TStream; OwnsUnderlying: Boolean=False);
     destructor Destroy; override;
 
     function Read(out Buf; n: LongInt): LongInt;
@@ -60,17 +61,20 @@ end;
 
 { TBufferedReader }
 
-constructor TBufferedReader.Create(Underlying: TStream);
+constructor TBufferedReader.Create(Underlying: TStream; OwnsUnderlying: Boolean);
 begin
   FUnderlying  := Underlying;
   FBufCapacity := 1024;
   FBufOffset   := 0;
   FBufSize     := 0;
   SetLength(FBuf, FBufCapacity);
+  FOwnsUnderlying := OwnsUnderlying;
 end;
 
 destructor TBufferedReader.Destroy;
 begin
+  if FOwnsUnderlying then
+    FreeAndNil(FUnderlying);
   inherited Destroy;
 end;
 

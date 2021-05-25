@@ -26,84 +26,8 @@ interface
 uses
   SysUtils, Classes, options;
 
-type
-
-  { TWorkspaceClientCapabilities }
-
-  TWorkspaceClientCapabilities = class(TPersistent)
-  private
-    fApplyEdit: Boolean;
-  published
-    property applyEdit: Boolean read fApplyEdit write fApplyEdit;
-  end;
-
-  { TTextDocumentClientCapabilities }
-
-  TTextDocumentClientCapabilities = class(TPersistent)
-  private
-  published
-  end;
-
-  { TClientCapabilities }
-
-  TClientCapabilities = class(TPersistent)
-  private
-    fWorkspace: TWorkspaceClientCapabilities;
-    fTextDocument: TTextDocumentClientCapabilities;
-  public
-    destructor Destroy; override;
-  published
-    property workspace: TWorkspaceClientCapabilities read fWorkspace write fWorkspace;
-    property textDocument: TTextDocumentClientCapabilities read fTextDocument write fTextDocument;
-  end;
-
-  { TServerCapabilities }
-
-  TServerCapabilities = class(TPersistent)
-  private
-    fSignatureHelpProvider: TSignatureHelpOptions;
-    fTextDocumentSync: TTextDocumentSyncOptions;
-    fCompletionProvider: TCompletionOptions;
-  public
-    constructor Create;
-    destructor Destroy; override;
-  published
-    property textDocumentSync: TTextDocumentSyncOptions read fTextDocumentSync write fTextDocumentSync;
-    property completionProvider: TCompletionOptions read fCompletionProvider write fCompletionProvider;
-    property signatureHelpProvider: TSignatureHelpOptions read fSignatureHelpProvider write fSignatureHelpProvider;
-  end;
-
-
 
 implementation
-
-
-{ TClientCapabilities }
-
-destructor TClientCapabilities.Destroy;
-begin
-  FreeAndNil(fWorkspace);
-  FreeAndNil(fTextDocument);
-  inherited Destroy;
-end;
-
-{ TServerCapabilities }
-
-constructor TServerCapabilities.Create;
-begin
-  textDocumentSync := TTextDocumentSyncOptions.Create;
-  completionProvider := TCompletionOptions.Create;
-  signatureHelpProvider := TSignatureHelpOptions.Create;
-end;
-
-destructor TServerCapabilities.Destroy;
-begin
-  FreeAndNil(fTextDocumentSync);
-  FreeAndNil(fCompletionProvider);
-  FreeAndNil(fSignatureHelpProvider);
-
-  inherited Destroy;
-end;
 
 end.
 

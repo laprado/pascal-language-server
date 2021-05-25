@@ -24,309 +24,66 @@ unit lsp;
 interface
 
 uses
-  Classes, SysUtils, TypInfo, fpjson, fpjsonrtti, fpjsonrpc,
-  basic, fgl;
+  Classes, SysUtils, TypInfo, basic, fgl, jsonstream;
 
 type
 
-  { TLSPStreamer }
+  TRpcMethod = procedure(Parameters: TJsonReader; Response: TJsonWriter);
 
-  TLSPStreamer = class(TJSONStreamer)
-  protected
-    function StreamClassProperty(const AObject: TObject): TJSONData; override;
-  public
-    constructor Create(AOwner : TComponent); override;
-  end;
+  { ERpcException }
 
-  { TLSPDeStreamer }
-
-  TLSPDeStreamer = class(TJSONDeStreamer)
-  protected
-    procedure DoRestoreProperty(AObject: TObject; PropInfo: PPropInfo;
-                                PropData: TJSONData); override;
-  end;
-
-  { TLSPStreaming }
-
-  generic TLSPStreaming<T: TPersistent> = class
-  private
-    class var Streamer: TLSPStreamer;
-    class var DeStreamer: TLSPDeStreamer;
-    class procedure GetObject(Sender: TOBject; AObject: TObject;
-                              Info: PPropInfo; AData: TJSONObject;
-                              DataName: TJSONStringType; var AValue: TObject); static;
-  public
-    class constructor Create;
-    class destructor Destroy;
-    class function ToObject(const JSON: TJSONData): T; static;
-    class function ToJSON(AObject: T): TJSONData; static;
-  end;
-
-  { TLSPProcessor }
-
-  generic TLSPProcess<T, U> = function (var Params : T): U;
-
-  generic TLSPProcessor<T, U: TPersistent> = class
-  public
-    class function Process(AProcess: specialize TLSPProcess<T, U>; const Params: TJSONData): TJSONData; static;
-  end;
-
-  { TLSPRequest }
-
-  generic TLSPRequest<T, U: TPersistent> = class(TCustomJSONRPCHandler)
-  protected
-    function DoExecute(const Params: TJSONData; AContext: TJSONRPCCallContext): TJSONData; override;
-    function Process(var Params : T): U; virtual; abstract;
-  end;
-
-  { TLSPNotification }
-
-  generic TLSPNotification<T: TPersistent> = class(TCustomJSONRPCHandler)
-  protected
-    function DoExecute(const Params: TJSONData; AContext: TJSONRPCCallContext): TJSONData; override;
-    procedure Process(var Params : T); virtual; abstract;
-  end;
-
-  { TLSPDispatcher }
-
-  TLSPDispatcher = class(TCustomJSONRPCDispatcher)
-  protected
-    function ExecuteMethod(const AClassName, AMethodName: TJSONStringType;
-      Params, ID: TJSONData; AContext: TJSONRPCCallContext): TJSONData; override;
-  public
-    constructor Create(AOwner: TComponent); override;
-  end;
-
-  { LSPException }
-
-  LSPException = class(Exception)
+  ERpcException = class(Exception)
   public
     function Code: Integer; virtual; abstract;
   end;
 
-  EServerNotInitialized = class(LSPException)
+  EServerNotInitialized = class(ERpcException)
   public
     function Code: Integer; override;
   end;
 
-  { EParseError }
-
-  EParseError = class(LSPException)
+  EParseError = class(ERpcException)
   public
     function Code: Integer; override;
   end;
 
-  EUnknownErrorCode = class(LSPException)
+  EInvalidRequest = class(ERpcException)
+  public
+    function Code: Integer; override;
+  end;
+
+  EMethodNotFound = class(ERpcException)
+  public
+    function Code: Integer; override;
+  end;
+
+  EUnknownErrorCode = class(ERpcException)
   public
     function Code: Integer; override;
   end;
 
   // Defined by the protocol.
-  ERequestCancelled = class(LSPException)
+  ERequestCancelled = class(ERpcException)
   public
     function Code: Integer; override;
   end;
 
-  EContentModified = class(LSPException)
+  EContentModified = class(ERpcException)
   public
     function Code: Integer; override;
   end;
 
-{ LSPHandlerManager }
-
-function LSPHandlerManager: TCustomJSONRPCHandlerManager;
 
 implementation
-
-{ EParseError }
-
-function EParseError.Code: Integer;
-begin
-  Result := -32700;
-end;
-
-{ TLSPStreamer }
-
-constructor TLSPStreamer.Create(AOwner: TComponent);
-begin
-  inherited Create(AOwner);
-end;
-
-function TLSPStreamer.StreamClassProperty(const AObject: TObject): TJSONData;
-var
-  C: TClass;
-  OptionalVariant: TOptionalVariantBase;
-  OptionalObject: TOptionalObjectBase;
-begin
-  if not Assigned(AObject) then
-  begin
-    Result := inherited StreamClassProperty(AObject);
-    Exit;
-  end;
-  C := AObject.ClassType;
-  if C.InheritsFrom(TOptionalVariantBase) then
-  begin
-    OptionalVariant := TOptionalVariantBase(AObject);
-    if OptionalVariant.HasValue then
-      Result := StreamVariant(OptionalVariant.Value)
-    else Result := nil
-  end
-  else if C.InheritsFrom(TOptionalObjectBase) then
-  begin
-    OptionalObject := TOptionalObjectBase(AObject);
-    if OptionalObject.HasValue then
-      if OptionalObject.Value = nil then Result := TJSONNull.Create
-      else Result := ObjectToJSON(OptionalObject.Value)
-    else Result := nil
-  end
-  else if C.InheritsFrom(TIntegerPair) then
-  begin
-    Result := TJSONArray.Create([TIntegerPair(AObject).a, TIntegerPair(AObject).b]);
-  end
-  else Result := inherited StreamClassProperty(AObject)
-end;
-
-{ TLSPDeStreamer }
-
-procedure TLSPDeStreamer.DoRestoreProperty(AObject: TObject; PropInfo: PPropInfo; PropData: TJSONData);
-var
-  C: TClass;
-  Optional: TObject;
-  OptionalVariant: TOptionalVariantBase;
-  OptionalObject: TOptionalObjectBase;
-begin
-  if PropInfo^.PropType^.Kind = tkClass then
-  begin
-    C := GetTypeData(PropInfo^.PropType)^.ClassType;
-    if C.InheritsFrom(TOptionalVariantBase) then
-    begin
-      Optional := C.Create;
-      OptionalVariant := TOptionalVariantBase(Optional);
-      SetObjectProp(AObject, PropInfo, Optional);
-      OptionalVariant.Value := JSONToVariant(PropData);
-    end
-    else if C.InheritsFrom(TOptionalObjectBase) then
-    begin
-      Optional := C.Create;
-      OptionalObject := TOptionalObjectBase(Optional);
-      SetObjectProp(AObject, PropInfo, Optional);
-      if PropData.JSONType = jtNull then OptionalObject.Value := nil
-      else
-      begin
-        OptionalObject.Value := OptionalObject.ValueClass.Create;
-        JSONToObject(PropData as TJSONObject, OptionalObject.Value);
-      end;
-    end
-    else inherited DoRestoreProperty(AObject, PropInfo, PropData)
-  end
-  else
-    inherited DoRestoreProperty(AObject, PropInfo, PropData)
-end;
-
-{ TLSPStreaming }
-
-class procedure TLSPStreaming.GetObject(Sender: TOBject; AObject: TObject;
-                                        Info: PPropInfo; AData: TJSONObject;
-                                        DataName: TJSONStringType; var AValue: TObject);
-var
-  C: TClass;
-begin
-  C := GetTypeData(Info^.PropType)^.ClassType;
-  assert(C.InheritsFrom(TPersistent));
-  AValue := C.Create;
-end;
-
-class constructor TLSPStreaming.Create;
-begin
-  Streamer := TLSPStreamer.Create(nil);
-  Streamer.Options := Streamer.Options +
-    [jsoEnumeratedAsInteger, jsoSetEnumeratedAsInteger, jsoTStringsAsArray];
-
-  DeStreamer := TLSPDeStreamer.Create(nil);
-  DeStreamer.OnGetObject := @GetObject;
-end;
-
-class destructor TLSPStreaming.Destroy;
-begin
-  FreeAndNil(Streamer);
-  FreeAndNil(DeStreamer);
-end;
-
-class function TLSPStreaming.ToObject(const JSON: TJSONData): T;
-begin
-  Result := T.Create;
-  DeStreamer.JSONToObject(JSON as TJSONObject, Result);
-end;
-
-class function TLSPStreaming.ToJSON(AObject: T): TJSONData;
-begin
-  Result := Streamer.ObjectToJSON(AObject);
-end;
-
-{ TLSPProcessor }
-
-class function TLSPProcessor.Process(AProcess: specialize TLSPProcess<T, U>; const Params: TJSONData): TJSONData;
-var
-  Input: T;
-begin
-  Input := specialize TLSPStreaming<T>.ToObject(Params);
-  Result := specialize TLSPStreaming<U>.ToJSON(AProcess(Input));
-  Input.Free;
-end;
-
-{ TLSPRequest }
-
-function TLSPRequest.DoExecute(const Params: TJSONData; AContext: TJSONRPCCallContext): TJSONData;
-var
-  Input: T;
-begin
-  Input := specialize TLSPStreaming<T>.ToObject(Params);
-  Result := specialize TLSPStreaming<U>.ToJSON(Process(Input));
-  Input.Free;
-  if not Assigned(Result) then Result := TJSONNull.Create;
-end;
-
-{ TLSPNotification }
-
-function TLSPNotification.DoExecute(const Params: TJSONData; AContext: TJSONRPCCallContext): TJSONData;
-var
-  Input: T;
-begin
-  Input := specialize TLSPStreaming<T>.ToObject(Params);
-  Process(Input);
-  Input.Free;
-end;
-
-{ TLSPDispatcher }
-
-function TLSPDispatcher.ExecuteMethod(const AClassName, AMethodName: TJSONStringType;
-    Params, ID: TJSONData; AContext: TJSONRPCCallContext): TJSONData;
-begin
-  try
-    Result := inherited ExecuteMethod(AClassName, AMethodName, Params, ID, AContext);
-  except
-    on E: LSPException do // handle errors specific to LSP
-      Exit(CreateJSON2Error(E.Message+' in '+SysBackTraceStr(ExceptAddr), E.Code, ID.Clone, TransactionProperty))
-    else raise;
-  end;
-end;
-
-constructor TLSPDispatcher.Create(AOwner: TComponent);
-begin
-  inherited Create(AOwner);
-  Options := [jdoSearchRegistry, jdoJSONRPC2, jdoNotifications, jdoStrictNotifications];
-end;
-
-{ LSPException }
 
 function EServerNotInitialized.Code: Integer;
 begin
   result := -32002;
 end;
 
-function EUnknownErrorCode.Code: Integer;
+function EParseError.Code: Integer;
 begin
-  result := -32001;
+  Result := -32700;
 end;
 
 function ERequestCancelled.Code: Integer;
@@ -339,12 +96,21 @@ begin
   result := -32801;
 end;
 
-{ LSPHandlerManager }
-
-function LSPHandlerManager: TCustomJSONRPCHandlerManager;
+function EInvalidRequest.Code: Integer;
 begin
-  Result := JSONRPCHandlerManager;
+  Result := -32600;
 end;
+
+function EMethodNotfound.Code: Integer;
+begin
+  Result := -32601;
+end;
+
+function EUnknownErrorCode.Code: Integer;
+begin
+  result := -32001;
+end;
+
 
 end.
 

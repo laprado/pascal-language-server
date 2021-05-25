@@ -44,19 +44,23 @@
       <FormatVersion Value="2"/>
       <Modes Count="0"/>
     </RunParams>
-    <RequiredPackages Count="4">
+    <RequiredPackages Count="5">
       <Item1>
-        <PackageName Value="LCLBase"/>
+        <PackageName Value="jsonstreampkg"/>
+        <DefaultFilename Value="deps/jsonstream/pascal/package/jsonstreampkg.lpk" Prefer="True"/>
       </Item1>
       <Item2>
-        <PackageName Value="CodeTools"/>
+        <PackageName Value="LCLBase"/>
       </Item2>
       <Item3>
-        <PackageName Value="WebLaz"/>
+        <PackageName Value="CodeTools"/>
       </Item3>
       <Item4>
-        <PackageName Value="FCL"/>
+        <PackageName Value="WebLaz"/>
       </Item4>
+      <Item5>
+        <PackageName Value="FCL"/>
+      </Item5>
     </RequiredPackages>
     <Units Count="11">
       <Unit0>
@@ -124,9 +128,6 @@
         <StackChecks Value="True"/>
       </Checks>
       <VerifyObjMethodCallValidity Value="True"/>
-      <Optimizations>
-        <OptimizationLevel Value="0"/>
-      </Optimizations>
     </CodeGeneration>
     <Linking>
       <Debugging>
