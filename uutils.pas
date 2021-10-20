@@ -1,5 +1,5 @@
 // Pascal Language Server
-// Copyright 2020 Arjan Adriaanse
+// Copyright 2021 Philip Zander
 
 // This file is part of Pascal Language Server.
 
@@ -17,17 +17,29 @@
 // along with Pascal Language Server.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-unit capabilities;
+unit uutils;
 
 {$mode objfpc}{$H+}
 
 interface
 
-uses
-  SysUtils, Classes, options;
-
+function MergePaths(Paths: array of String): String;
 
 implementation
+
+function MergePaths(Paths: array of String): String;
+var
+  i: integer;
+begin
+  Result := '';
+  for i := low(Paths) to high(Paths) do
+  begin
+    if (Result <> '') and (Paths[i] <> '') then
+      Result := Result + ';' + Paths[i]
+    else if (Result = '') and (Paths[i] <> '') then
+      Result := Paths[i];
+  end;
+end;
 
 end.
 

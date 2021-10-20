@@ -1,5 +1,6 @@
 // Pascal Language Server
 // Copyright 2020 Arjan Adriaanse
+//           2021 Philip Zander
 
 // This file is part of Pascal Language Server.
 
@@ -17,39 +18,22 @@
 // along with Pascal Language Server.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-unit general;
+unit uinitialize;
 
 {$mode objfpc}{$H+}
 
 interface
 
 uses
-  SysUtils, Classes, jsonstream, capabilities, lsp;
+  jsonstream;
 
-  procedure Initialize(Reader: TJsonReader; Response: TJsonWriter);
-  function MergePaths(Paths: array of String): String;
+procedure Initialize(Reader: TJsonReader; Response: TJsonWriter);
 
 implementation
 
 uses
-  CodeToolManager, CodeToolsConfig, URIParser, LazUTF8, DefineTemplates,
-  fileutil, DOM, XMLRead, 
-  udebug, packages;
-
-
-function MergePaths(Paths: array of String): String;
-var
-  i: integer;
-begin
-  Result := '';
-  for i := low(Paths) to high(Paths) do
-  begin
-    if (Result <> '') and (Paths[i] <> '') then
-      Result := Result + ';' + Paths[i]
-    else if (Result = '') and (Paths[i] <> '') then
-      Result := Paths[i];
-  end;
-end;
+  SysUtils, Classes, CodeToolManager, CodeToolsConfig, URIParser, LazUTF8,
+  DefineTemplates, FileUtil, LazFileUtils, udebug, uutils, upackages;
 
 procedure ResolveDeps(Pkg: TPackage);
 var
@@ -245,7 +229,7 @@ end;
 
 procedure LoadAllPackagesUnderPath(const Dir: string);
 var
-  Packages,
+  upackages,
   SubDirectories:    TStringList;
   i:                 integer;     
   Pkg:               TPackage;
@@ -254,11 +238,11 @@ begin
     Exit;
 
   try
-    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+    upackages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
 
-    for i := 0 to Packages.Count - 1 do
+    for i := 0 to upackages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(Packages[i]);
+      Pkg := GetPackageOrProject(upackages[i]);
       ResolveDeps(Pkg);
     end;
 
@@ -269,16 +253,16 @@ begin
       LoadAllPackagesUnderPath(SubDirectories[i]);
 
   finally
-    if Assigned(Packages) then
-      FreeAndNil(Packages);
-    if Assigned(Packages) then
+    if Assigned(upackages) then
+      FreeAndNil(upackages);
+    if Assigned(upackages) then
       FreeAndNil(SubDirectories);
   end;
 end;
 
 procedure GuessMissingDepsForAllPackages(const Dir: string);
 var
-  Packages,
+  upackages,
   SubDirectories:    TStringList;
   i:                 integer;
   Pkg:               TPackage;
@@ -287,11 +271,11 @@ begin
     Exit;
 
   try
-    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+    upackages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
 
-    for i := 0 to Packages.Count - 1 do
+    for i := 0 to upackages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(Packages[i]);
+      Pkg := GetPackageOrProject(upackages[i]);
       GuessMissingDependencies(Pkg);
     end;
 
@@ -302,9 +286,9 @@ begin
       GuessMissingDepsForAllPackages(SubDirectories[i]);
 
   finally
-    if Assigned(Packages) then
-      FreeAndNil(Packages);
-    if Assigned(Packages) then
+    if Assigned(upackages) then
+      FreeAndNil(upackages);
+    if Assigned(upackages) then
       FreeAndNil(SubDirectories);
   end;
 end;
@@ -317,7 +301,7 @@ end;
 // project/package files? See also comment before ConfigurePackage.
 procedure ConfigurePaths(const Dir: string; const ParentPaths: TPaths);
 var
-  Packages, 
+  upackages,
   SubDirectories:    TStringList;
   i:                 integer;
   Paths:             TPaths;
@@ -332,7 +316,7 @@ begin
   if IgnoreDirectory(Dir) then
     Exit;
 
-  Packages          := nil;
+  upackages          := nil;
   SubDirectories    := nil;
 
   Paths.IncludePath := Dir;
@@ -342,33 +326,33 @@ begin
   try
     DebugLog('--- %s ---', [Dir]);
 
-    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+    upackages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
 
     // 1. Recursively merge search paths
-    for i := 0 to Packages.Count - 1 do
+    for i := 0 to upackages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(Packages[i]);
+      Pkg := GetPackageOrProject(upackages[i]);
       ResolvePaths(Pkg);
     end;
 
     // 2. Configure package directories
-    for i := 0 to Packages.Count - 1 do
+    for i := 0 to upackages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(Packages[i]);
+      Pkg := GetPackageOrProject(upackages[i]);
       ConfigurePackage(Pkg);
     end;
 
     // 3. Add merged search paths for all packages/projects in directory to
     //    search path of directory.
-    for i := 0 to Packages.Count - 1 do
+    for i := 0 to upackages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(Packages[i]);
+      Pkg := GetPackageOrProject(upackages[i]);
       Paths.IncludePath := MergePaths([Paths.IncludePath, Pkg.ResolvedPaths.IncludePath]);
       Paths.UnitPath    := MergePaths([Paths.UnitPath,    Pkg.ResolvedPaths.UnitPath]);
       Paths.SrcPath     := MergePaths([Paths.SrcPath,     Pkg.ResolvedPaths.SrcPath]);
     end;
 
-    if Packages.Count = 0 then
+    if upackages.Count = 0 then
     begin
       Paths.IncludePath := MergePaths([Paths.IncludePath, ParentPaths.IncludePath]);
       Paths.UnitPath    := MergePaths([Paths.UnitPath,    ParentPaths.UnitPath]);
@@ -415,9 +399,9 @@ begin
     for i := 0 to SubDirectories.Count - 1 do
       ConfigurePaths(SubDirectories[i], Paths);
   finally
-    if Assigned(Packages) then
-      FreeAndNil(Packages);
-    if Assigned(Packages) then
+    if Assigned(upackages) then
+      FreeAndNil(upackages);
+    if Assigned(upackages) then
       FreeAndNil(SubDirectories);
   end;
 end;

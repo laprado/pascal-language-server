@@ -1,5 +1,6 @@
 // Pascal Language Server
 // Copyright 2020 Arjan Adriaanse
+//           2021 Philip Zander
 
 // This file is part of Pascal Language Server.
 
@@ -17,24 +18,90 @@
 // along with Pascal Language Server.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-unit completion;
+unit utextdocument;
 
 {$mode objfpc}{$H+}
 
 interface
 
 uses
-  SysUtils, Classes, lsp, basic, jsonstream;
+  jsonstream;
 
+procedure TextDocument_DidOpen(Reader: TJsonReader);
+procedure TextDocument_DidChange(Reader: TJsonReader);
 procedure TextDocument_SignatureHelp(Reader: TJsonReader; Writer: TJsonWriter);
 procedure TextDocument_Completion(Reader: TJsonReader; Writer: TJsonWriter);
 
 implementation
 
 uses
-  URIParser, CodeToolManager, CodeCache, IdentCompletionTool, 
+  Classes, SysUtils, URIParser, CodeToolManager, CodeCache, IdentCompletionTool,
   BasicCodeTools, PascalParserTool, CodeTree,
-  udebug;
+  udebug, uerrors;
+
+function ParseChangeOrOpen(
+  Reader: TJsonReader; out Uri: string; out Content: string; IsChange: Boolean
+): Boolean;
+var
+  Key:                  string;
+  HaveUri, HaveContent: Boolean;
+begin
+  HaveUri     := false;
+  HaveContent := false;
+  if Reader.Dict then
+    while (Reader.Advance <> jsDictEnd) and Reader.Key(Key) do
+    begin
+      if (Key = 'textDocument') and Reader.Dict then
+        while (Reader.Advance <> jsDictEnd) and Reader.Key(Key) do
+        begin
+          if (Key = 'uri') and Reader.Str(Uri) then
+            HaveUri := true
+          else if not IsChange and (Key = 'text') and Reader.Str(Content) then
+            HaveContent := true;
+        end
+      else if IsChange and (Key = 'contentChanges') and Reader.List then
+        while Reader.Advance <> jsListEnd do
+        begin
+          if Reader.Dict then
+            while (Reader.Advance <> jsDictEnd) and (Reader.Key(Key)) do
+            begin
+              if (Key = 'text') and Reader.Str(Content) then
+                HaveContent := true;
+            end;
+        end;
+    end;
+  Result := HaveUri and HaveContent;
+end;
+
+procedure TextDocument_DidOpen(Reader: TJsonReader);
+var
+  Code:    TCodeBuffer;
+  UriStr:  string;
+  Uri:     TURI;
+  Content: string;
+begin
+  if ParseChangeOrOpen(Reader, UriStr, Content, false) then
+  begin
+    Uri         := ParseURI(UriStr);
+    Code        := CodeToolBoss.LoadFile(URI.Path + URI.Document, false, false);
+    Code.Source := Content;
+  end;
+end;
+
+procedure TextDocument_DidChange(Reader: TJsonReader);
+var
+  Code:        TCodeBuffer;
+  UriStr:      string;
+  Uri:         TURI;
+  Content:     string;
+begin
+  if ParseChangeOrOpen(Reader, UriStr, Content, true) then
+  begin
+    Uri         := ParseURI(UriStr);
+    Code        := CodeToolBoss.FindFile(URI.Path + URI.Document);
+    Code.Source := Content;
+  end;
+end;
 
 type
   TStringSlice = record
@@ -59,10 +126,8 @@ var
   Identifier:       TIdentifierListItem;
   i, j, Count:      Integer;
   ResultType:       string;
-  Text:             string;
   Segment:          string;
-  node, paramsNode,
-  resultNode:       TCodeTreeNode;
+  node, paramsNode: TCodeTreeNode;
   SegmentLen:       integer;
   Rec:              TCompletionRec;
 
@@ -97,7 +162,6 @@ begin
 
     if (not Exact) or (CompareText(Identifier.Identifier, Prefix) = 0) then
     begin
-      resultNode := Identifier.Tool.GetProcResultNode(identifier.Node);
       paramsNode := Identifier.Tool.GetProcParamList(identifier.Node);
       if Assigned(paramsNode) then
       begin
@@ -207,35 +271,32 @@ begin
   Result.Uri := ParseUri(UriStr);
 end;
 
-//function TSignatureHelp.Process(var Params: TSignatureHelpParams
-//  ): TSignatureList;
-
-procedure SignatureCallback(const Rec: TCompletionRec; W: TJsonWriter);
+procedure SignatureCallback(const Rec: TCompletionRec; Writer: TJsonWriter);
 var
   i: integer;
 begin
-  W.Dict;
-    W.Key('label');
-    W.Str(Rec.Text);
+  Writer.Dict;
+    Writer.Key('label');
+    Writer.Str(Rec.Text);
 
-    W.Key('parameters');
-    W.List;
+    Writer.Key('parameters');
+    Writer.List;
       for i := low(Rec.Parameters) to high(Rec.Parameters) do
       begin
-        W.Dict;
-          W.Key('label');
-          W.List;
-            W.Number(Rec.Parameters[i].a);
-            W.Number(Rec.Parameters[i].b);
-          W.ListEnd;
-          // W.Key('documentation');
-        W.DictEnd;
+        Writer.Dict;
+          Writer.Key('label');
+          Writer.List;
+            Writer.Number(Rec.Parameters[i].a);
+            Writer.Number(Rec.Parameters[i].b);
+          Writer.ListEnd;
+          // Writer.Key('documentation');
+        Writer.DictEnd;
       end;
-    W.ListEnd;
+    Writer.ListEnd;
 
-    //W.Key('documentation');
-    //W.Key('activeParameter');
-  W.DictEnd;
+    //Writer.Key('documentation');
+    //Writer.Key('activeParameter');
+  Writer.DictEnd;
 end;
 
 procedure TextDocument_SignatureHelp(Reader: TJsonReader; Writer: TJsonWriter);
@@ -273,7 +334,6 @@ var
 begin
   Req := ParseCompletionRequest(Reader);
 
-  //Code := CodeToolBoss.LoadFile(URI.Path + URI.Document, true, false);
   Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
   assert(Code <> nil);
 
@@ -330,7 +390,6 @@ begin
   Req := ParseCompletionRequest(Reader);
 
   Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
-  //Code := CodeToolBoss.LoadFile(URI.Path + URI.Document, true, false);
 
   if Code = nil then
     raise EUnknownErrorCode.CreateFmt('File not found: %s', [Req.Uri.Path + Req.Uri.Document]);
@@ -350,10 +409,5 @@ begin
   Writer.DictEnd;
 end;
 
-initialization
-{
-  LSPHandlerManager.RegisterHandler('textDocument/completion', TCompletion);
-  LSPHandlerManager.RegisterHandler('textDocument/signatureHelp', TSignatureHelp);
-}
 end.
 

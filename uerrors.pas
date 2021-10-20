@@ -17,18 +17,16 @@
 // along with Pascal Language Server.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-unit lsp;
+unit uerrors;
 
 {$mode objfpc}{$H+}
 
 interface
 
 uses
-  Classes, SysUtils, TypInfo, basic, fgl, jsonstream;
+  Classes, SysUtils;
 
 type
-
-  TRpcMethod = procedure(Parameters: TJsonReader; Response: TJsonWriter);
 
   { ERpcException }
 

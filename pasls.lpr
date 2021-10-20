@@ -1,5 +1,6 @@
 // Pascal Language Server
 // Copyright 2020 Arjan Adriaanse
+//           2021 Philip Zander
 
 // This file is part of Pascal Language Server.
 
@@ -22,10 +23,8 @@ program pasls;
 {$mode objfpc}{$H+}
 
 uses
-  SysUtils, fpjson, jsonparser, jsonscanner,
-  lsp, general, synchronization, completion,
-  classes, iostream, streamex, packages, udebug, 
-  ubufferedreader, jsonstream;
+  Classes, SysUtils, iostream, streamex, udebug, ubufferedreader, jsonstream,
+  upackages, uerrors, uinitialize, utextdocument, uutils;
 
 type
   TRpcIdKind = (ridString, ridInteger, ridNull);
@@ -171,6 +170,7 @@ begin
   else if Method = 'initialized' then
     Result := false
   else if Method = 'shutdown' then
+    Result := false
   else if Method = 'textDocument/completion' then
     TextDocument_Completion(Parameters, Response)
   else if Method = 'textDocument/signatureHelp' then
@@ -206,11 +206,11 @@ begin
 
   while True do
   begin
-    Response       := nil;
-    Request        := nil;
-    JsonWriter     := nil;
-    JsonReader     := nil;
-    HaveResult     := false;
+    Response   := nil;
+    Request    := nil;
+    JsonWriter := nil;
+    JsonReader := nil;
+    HaveResult := false;
 
     try
       try

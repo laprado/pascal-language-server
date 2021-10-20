@@ -1,5 +1,6 @@
 // Pascal Language Server
 // Copyright 2020 Arjan Adriaanse
+//           2021 Philip Zander
 
 // This file is part of Pascal Language Server.
 
@@ -17,16 +18,17 @@
 // along with Pascal Language Server.  If not, see
 // <https://www.gnu.org/licenses/>.
 
-unit options;
+unit usynchronization;
 
 {$mode objfpc}{$H+}
 
 interface
 
 uses
-  SysUtils, Classes;
+  jsonstream;
+
 
 implementation
 
-end.
 
+end.
