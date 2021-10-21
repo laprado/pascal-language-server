@@ -144,7 +144,13 @@ begin
   CodeToolBoss.IdentifierList.Prefix := Prefix;
 
   if not CodeToolBoss.GatherIdentifiers(Code, X, Y) then
-    raise ERpcError.Create(jsrpcRequestFailed, CodeToolBoss.ErrorMessage);
+    raise ERpcError.Create(
+      jsrpcRequestFailed, 
+      Format('Line %d: %s', [
+        CodeToolBoss.ErrorLine, 
+        CodeToolBoss.ErrorMessage
+      ])
+    );
 
   Count := CodeToolBoss.IdentifierList.GetFilteredCount;
 
@@ -307,6 +313,9 @@ var
   Response: TRpcResponse;
   Writer:   TJsonWriter;
 
+const
+  NullId: TRpcId = (Kind: ridNull);
+
   function GetProcName(Code: TCodeBuffer; var X, Y: integer): String;
   var
     CodeContexts: TCodeContextInfo;
@@ -333,28 +342,58 @@ var
     Result := CodeContexts.ProcName;
   end;
 begin
+  Response := nil;
   try
-    Req := ParseCompletionRequest(Request.Reader);
+    try
+      Req := ParseCompletionRequest(Request.Reader);
 
-    Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
-    assert(Code <> nil);
+      Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
+      assert(Code <> nil);
 
-    ProcName := GetProcName(Code, Req.X, Req.Y);
+      ProcName := GetProcName(Code, Req.X, Req.Y);
 
-    Response := TRpcResponse.Create(Request.Id);
-    Writer := Response.Writer;
+      Response := TRpcResponse.Create(Request.Id);
+      Writer := Response.Writer;
 
-    Writer.Dict;
-      Writer.Key('signatures');
-      Writer.List;
-        GetCompletionRecords(Code, Req.X, Req.Y, ProcName, true, @SignatureCallback, Writer);
-      Writer.ListEnd;
+      Writer.Dict;
+        Writer.Key('signatures');
+        Writer.List;
+          GetCompletionRecords(Code, Req.X, Req.Y, ProcName, true, @SignatureCallback, Writer);
+        Writer.ListEnd;
 
-      //Writer.Key('activeParameter');
-      //Writer.Key('activeSignature');
-    Writer.DictEnd;
+        //Writer.Key('activeParameter');
+        //Writer.Key('activeSignature');
+      Writer.DictEnd;
 
-    Rpc.Send(Response);
+      //raise ERpcError.Create(-123, 'This is a test');
+
+      Rpc.Send(Response);
+    except
+      on E: ERpcError do
+      begin
+        // Unfortunately, there isn't really a good way to report errors to the
+        // client. While there are error responses, those aren't shown to the
+        // user. There is also the call window/showMessage, but this one is not
+        // implemented by NeoVim. So we work around it by showing a fake
+        // completion item.
+        FreeAndNil(Response);
+        Response := TRpcResponse.Create(Request.Id);
+        Writer := Response.Writer;
+        Writer.Dict;
+          Writer.Key('signatures');
+          Writer.List;
+            Writer.Dict;
+              Writer.key('label');
+              Writer.Str(e.Message);
+            Writer.DictEnd;
+          Writer.ListEnd;
+
+          //Writer.Key('activeParameter');
+          //Writer.Key('activeSignature');
+        Writer.DictEnd;
+        Rpc.Send(Response);
+      end;
+    end;
   finally
     FreeAndNil(Response);
   end;
@@ -401,33 +440,62 @@ var
 begin
   Response := nil;
   try
-    Req := ParseCompletionRequest(Request.Reader);
+    try
+      Req := ParseCompletionRequest(Request.Reader);
 
-    Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
+      Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
 
-    if Code = nil then
-      raise ERpcError.CreateFmt(
-        jsrpcInvalidRequest,
-        'File not found: %s', [Req.Uri.Path + Req.Uri.Document]
-      );
+      if Code = nil then
+        raise ERpcError.CreateFmt(
+          jsrpcInvalidRequest,
+          'File not found: %s', [Req.Uri.Path + Req.Uri.Document]
+        );
 
-    Prefix := GetPrefix(Code, Req.X, Req.Y);
+      Prefix := GetPrefix(Code, Req.X, Req.Y);
 
-    DebugLog('Complete: %d, %d, "%s"', [Req.X, Req.Y, Prefix]);
+      DebugLog('Complete: %d, %d, "%s"', [Req.X, Req.Y, Prefix]);
 
-    Response := TRpcResponse.Create(Request.Id);
-    Writer   := Response.Writer;
-    Writer.Dict;
-      Writer.Key('isIncomplete');
-      Writer.Bool(false);
+      Response := TRpcResponse.Create(Request.Id);
+      Writer   := Response.Writer;
+      Writer.Dict;
+        Writer.Key('isIncomplete');
+        Writer.Bool(false);
 
-      Writer.Key('items');
-      Writer.List;
-        GetCompletionRecords(Code, Req.X + 1, Req.Y + 1, Prefix, false, @CompletionCallback, Writer);
-      Writer.ListEnd;
-    Writer.DictEnd;
+        Writer.Key('items');
+        Writer.List;
+          GetCompletionRecords(Code, Req.X + 1, Req.Y + 1, Prefix, false, @CompletionCallback, Writer);
+        Writer.ListEnd;
+      Writer.DictEnd;
 
-    Rpc.Send(Response);
+      Rpc.Send(Response);
+    except
+      on E: ERpcError do
+      begin
+        // Unfortunately, there isn't really a good way to report errors to the
+        // client. While there are error responses, those aren't shown to the
+        // user. There is also the call window/showMessage, but this one is not
+        // implemented by NeoVim. So we work around it by showing a fake
+        // completion item.
+        FreeAndNil(Response);
+        Response := TRpcResponse.Create(Request.Id);
+        Writer := Response.Writer;
+        Writer.Dict;
+          Writer.Key('items');
+          Writer.List;
+            Writer.Dict;
+              Writer.Key('label');
+              Writer.Str(e.Message);
+              Writer.Key('insertText');
+              Writer.Str('');
+            Writer.DictEnd;
+          Writer.ListEnd;
+
+          //Writer.Key('activeParameter');
+          //Writer.Key('activeSignature');
+        Writer.DictEnd;
+        Rpc.Send(Response);
+      end;
+    end;
   finally
     FreeAndNil(Response);
   end;
