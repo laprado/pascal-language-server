@@ -25,19 +25,19 @@ unit utextdocument;
 interface
 
 uses
-  jsonstream;
+  jsonstream, ujsonrpc;
 
-procedure TextDocument_DidOpen(Reader: TJsonReader);
-procedure TextDocument_DidChange(Reader: TJsonReader);
-procedure TextDocument_SignatureHelp(Reader: TJsonReader; Writer: TJsonWriter);
-procedure TextDocument_Completion(Reader: TJsonReader; Writer: TJsonWriter);
+procedure TextDocument_DidOpen(Rpc: TRpcPeer; Request: TRpcRequest);
+procedure TextDocument_DidChange(Rpc: TRpcPeer; Request: TRpcRequest);
+procedure TextDocument_SignatureHelp(Rpc: TRpcPeer; Request: TRpcRequest);
+procedure TextDocument_Completion(Rpc: TRpcPeer; Request: TRpcRequest);
 
 implementation
 
 uses
   Classes, SysUtils, URIParser, CodeToolManager, CodeCache, IdentCompletionTool,
   BasicCodeTools, PascalParserTool, CodeTree,
-  udebug, uerrors;
+  udebug;
 
 function ParseChangeOrOpen(
   Reader: TJsonReader; out Uri: string; out Content: string; IsChange: Boolean
@@ -73,14 +73,14 @@ begin
   Result := HaveUri and HaveContent;
 end;
 
-procedure TextDocument_DidOpen(Reader: TJsonReader);
+procedure TextDocument_DidOpen(Rpc: TRpcPeer; Request: TRpcRequest);
 var
   Code:    TCodeBuffer;
   UriStr:  string;
   Uri:     TURI;
   Content: string;
 begin
-  if ParseChangeOrOpen(Reader, UriStr, Content, false) then
+  if ParseChangeOrOpen(Request.Reader, UriStr, Content, false) then
   begin
     Uri         := ParseURI(UriStr);
     Code        := CodeToolBoss.LoadFile(URI.Path + URI.Document, false, false);
@@ -88,14 +88,14 @@ begin
   end;
 end;
 
-procedure TextDocument_DidChange(Reader: TJsonReader);
+procedure TextDocument_DidChange(Rpc: TRpcPeer; Request: TRpcRequest);
 var
   Code:        TCodeBuffer;
   UriStr:      string;
   Uri:         TURI;
   Content:     string;
 begin
-  if ParseChangeOrOpen(Reader, UriStr, Content, true) then
+  if ParseChangeOrOpen(Request.Reader, UriStr, Content, true) then
   begin
     Uri         := ParseURI(UriStr);
     Code        := CodeToolBoss.FindFile(URI.Path + URI.Document);
@@ -144,7 +144,7 @@ begin
   CodeToolBoss.IdentifierList.Prefix := Prefix;
 
   if not CodeToolBoss.GatherIdentifiers(Code, X, Y) then
-    raise EUnknownErrorCode.Create(CodeToolBoss.ErrorMessage);
+    raise ERpcError.Create(jsrpcRequestFailed, CodeToolBoss.ErrorMessage);
 
   Count := CodeToolBoss.IdentifierList.GetFilteredCount;
 
@@ -299,12 +299,13 @@ begin
   Writer.DictEnd;
 end;
 
-procedure TextDocument_SignatureHelp(Reader: TJsonReader; Writer: TJsonWriter);
+procedure TextDocument_SignatureHelp(Rpc: TRpcPeer; Request: TRpcRequest);
 var
   Code:     TCodeBuffer;
   ProcName: String;
-
   Req:      TCompletionRequest;
+  Response: TRpcResponse;
+  Writer:   TJsonWriter;
 
   function GetProcName(Code: TCodeBuffer; var X, Y: integer): String;
   var
@@ -316,7 +317,7 @@ var
     CodeToolBoss.FindCodeContext(Code, X + 1, Y + 1, CodeContexts);
 
     if not Assigned(CodeContexts) then
-      raise EParseError.Create(CodeToolBoss.ErrorMessage);
+      raise ERpcError.Create(jsrpcRequestFailed, CodeToolBoss.ErrorMessage);
 
     ProcStart := CodeContexts.StartPos;
 
@@ -332,22 +333,31 @@ var
     Result := CodeContexts.ProcName;
   end;
 begin
-  Req := ParseCompletionRequest(Reader);
+  try
+    Req := ParseCompletionRequest(Request.Reader);
 
-  Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
-  assert(Code <> nil);
+    Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
+    assert(Code <> nil);
 
-  ProcName := GetProcName(Code, Req.X, Req.Y);
+    ProcName := GetProcName(Code, Req.X, Req.Y);
 
-  Writer.Dict;
-    Writer.Key('signatures');
-    Writer.List;
-      GetCompletionRecords(Code, Req.X, Req.Y, ProcName, true, @SignatureCallback, Writer);
-    Writer.ListEnd;
+    Response := TRpcResponse.Create(Request.Id);
+    Writer := Response.Writer;
 
-    //Writer.Key('activeParameter');
-    //Writer.Key('activeSignature');
-  Writer.DictEnd;
+    Writer.Dict;
+      Writer.Key('signatures');
+      Writer.List;
+        GetCompletionRecords(Code, Req.X, Req.Y, ProcName, true, @SignatureCallback, Writer);
+      Writer.ListEnd;
+
+      //Writer.Key('activeParameter');
+      //Writer.Key('activeSignature');
+    Writer.DictEnd;
+
+    Rpc.Send(Response);
+  finally
+    FreeAndNil(Response);
+  end;
 end;
 
 
@@ -370,11 +380,13 @@ begin
   Writer.DictEnd;
 end;
 
-procedure TextDocument_Completion(Reader: TJsonReader; Writer: TJsonWriter);
+procedure TextDocument_Completion(Rpc: TRpcPeer; Request: TRpcRequest);
 var
-  Req:    TCompletionRequest;
-  Code:   TCodeBuffer;
-  Prefix: string;
+  Req:      TCompletionRequest;
+  Code:     TCodeBuffer;
+  Prefix:   string;
+  Response: TRpcResponse;
+  Writer:   TJsonWriter;
 
   function GetPrefix(Code: TCodeBuffer; X, Y: integer): string;
   var
@@ -387,26 +399,38 @@ var
   end;
 
 begin
-  Req := ParseCompletionRequest(Reader);
+  Response := nil;
+  try
+    Req := ParseCompletionRequest(Request.Reader);
 
-  Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
+    Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
 
-  if Code = nil then
-    raise EUnknownErrorCode.CreateFmt('File not found: %s', [Req.Uri.Path + Req.Uri.Document]);
+    if Code = nil then
+      raise ERpcError.CreateFmt(
+        jsrpcInvalidRequest,
+        'File not found: %s', [Req.Uri.Path + Req.Uri.Document]
+      );
 
-  Prefix := GetPrefix(Code, Req.X, Req.Y);
+    Prefix := GetPrefix(Code, Req.X, Req.Y);
 
-  DebugLog('Complete: %d, %d, "%s"', [Req.X, Req.Y, Prefix]);
+    DebugLog('Complete: %d, %d, "%s"', [Req.X, Req.Y, Prefix]);
 
-  Writer.Dict;
-    Writer.Key('isIncomplete');
-    Writer.Bool(false);
+    Response := TRpcResponse.Create(Request.Id);
+    Writer   := Response.Writer;
+    Writer.Dict;
+      Writer.Key('isIncomplete');
+      Writer.Bool(false);
 
-    Writer.Key('items');
-    Writer.List;
-      GetCompletionRecords(Code, Req.X + 1, Req.Y + 1, Prefix, false, @CompletionCallback, Writer);
-    Writer.ListEnd;
-  Writer.DictEnd;
+      Writer.Key('items');
+      Writer.List;
+        GetCompletionRecords(Code, Req.X + 1, Req.Y + 1, Prefix, false, @CompletionCallback, Writer);
+      Writer.ListEnd;
+    Writer.DictEnd;
+
+    Rpc.Send(Response);
+  finally
+    FreeAndNil(Response);
+  end;
 end;
 
 end.

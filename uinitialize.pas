@@ -25,9 +25,9 @@ unit uinitialize;
 interface
 
 uses
-  jsonstream;
+  jsonstream, ujsonrpc;
 
-procedure Initialize(Reader: TJsonReader; Response: TJsonWriter);
+procedure Initialize(Rpc: TRpcPeer; Request: TRpcRequest);
 
 implementation
 
@@ -173,7 +173,7 @@ begin
   if Pkg.Configured then
     exit;
   Pkg.Configured := True;
-  
+ 
   DirectoryTemplate := TDefineTemplate.Create(
     'Directory', '',
     '', Pkg.Dir,
@@ -406,23 +406,29 @@ begin
   end;
 end;
 
-procedure Initialize(Reader: TJsonReader; Response: TJsonWriter);
+procedure Initialize(Rpc: TRpcPeer; Request: TRpcRequest);
 var
   CodeToolsOptions: TCodeToolsOptions;
   Key:              string;
   RootUri:          string;
   Directory:        string;
   Paths:            TPaths;
+  Response:         TRpcResponse;
+  Reader:           TJsonReader;
+  Writer:           TJsonWriter;
 begin
-  if Reader.Dict then
-    while Reader.Advance <> jsDictEnd do
-      if Reader.Key(Key) and (Key = 'rootUri') then
-        Reader.Str(RootUri);
+  CodeToolsOptions := nil;
+  Response         := nil;
 
-  URIToFilename(RootUri, Directory);
-
-  CodeToolsOptions  := nil;
   try
+    Reader := Request.Reader;
+    if Reader.Dict then
+      while Reader.Advance <> jsDictEnd do
+        if Reader.Key(Key) and (Key = 'rootUri') then
+          Reader.Str(RootUri);
+
+    URIToFilename(RootUri, Directory);
+
     CodeToolsOptions := TCodeToolsOptions.Create;
 
     with CodeToolsOptions do
@@ -447,71 +453,69 @@ begin
       IdentifierList.SortForHistory := True;
       IdentifierList.SortForScope   := True;
     end;
+
+    Paths.IncludePath := '';
+    Paths.UnitPath    := '';
+    Paths.SrcPath     := '';
+
+    LoadAllPackagesUnderPath(Directory);
+    GuessMissingDepsForAllPackages(Directory);
+    ConfigurePaths(Directory, Paths);
+
+    Response := TRpcResponse.Create(Request.Id);
+    Writer   := Response.Writer;
+
+    Writer.Dict;
+      Writer.Key('serverInfo');
+      Writer.Dict;
+        Writer.Key('name');
+        Writer.Str('Pascal Language Server');
+      Writer.DictEnd;
+
+      Writer.Key('capabilities');
+      Writer.Dict;
+        Writer.Key('textDocumentSync');
+        Writer.Dict;
+          Writer.Key('openClose');
+          Writer.Bool(true);
+
+          Writer.Key('change');
+          Writer.Number(1); // 1 = Sync by sending full content, 2 = Incremental
+        Writer.DictEnd;
+
+        Writer.Key('completionProvider');
+        Writer.Dict;
+          Writer.Key('triggerCharacters');
+          Writer.Null;
+
+          Writer.Key('allCommitCharacters');
+          Writer.Null;
+
+          Writer.Key('resolveProvider');
+          Writer.Bool(false);
+        Writer.DictEnd;
+
+        Writer.Key('signatureHelpProvider');
+        Writer.Dict;
+          Writer.Key('triggerCharacters');
+          Writer.List;
+            Writer.Str('(');
+            Writer.Str(',');
+          Writer.ListEnd;
+
+          Writer.Key('retriggerCharacters');
+          Writer.List;
+          Writer.ListEnd;
+        Writer.DictEnd;
+      Writer.DictEnd;
+    Writer.DictEnd;
+
+    Rpc.Send(Response);
   finally
     FreeAndNil(CodeToolsOptions);
+    FreeAndNil(Response);
   end;
-
-  Paths.IncludePath := '';
-  Paths.UnitPath    := '';
-  Paths.SrcPath     := '';
-
-  LoadAllPackagesUnderPath(Directory);
-  GuessMissingDepsForAllPackages(Directory);
-  ConfigurePaths(Directory, Paths);
-
-  Response.Dict;
-    {Response.Key('serverInfo');
-    Response.Dict;
-      Response.Key('name');
-      Response.Str('Pascal Language Server');
-    Response.DictEnd;  }
-
-    Response.Key('capabilities');
-    Response.Dict;
-      Response.Key('textDocumentSync');
-      Response.Dict;
-        Response.Key('openClose');
-        Response.Bool(true);
-
-        Response.Key('change');
-        Response.Number(1); // 1 = Sync by sending full content, 2 = Incremental
-      Response.DictEnd;
-
-      Response.Key('completionProvider');
-      Response.Dict;
-        Response.Key('triggerCharacters');
-        Response.Null;
-
-        Response.Key('allCommitCharacters');
-        Response.Null;
-
-        Response.Key('resolveProvider');
-        Response.Bool(false);
-      Response.DictEnd;
-
-      Response.Key('signatureHelpProvider');
-      Response.Dict;
-        Response.Key('triggerCharacters');
-        Response.List;
-          Response.Str('(');
-          Response.Str(',');
-        Response.ListEnd;
-
-        Response.Key('retriggerCharacters');
-        Response.List;
-        Response.ListEnd;
-      Response.DictEnd;
-    Response.DictEnd;
-  Response.DictEnd;
 end;
 
-initialization
-  {
-  LSPHandlerManager.RegisterHandler('initialize', TInitialize);
-  LSPHandlerManager.RegisterHandler('initialized', TInitialized);
-  LSPHandlerManager.RegisterHandler('shutdown', TShutdown);
-  LSPHandlerManager.RegisterHandler('exit', TExit);
-  LSPHandlerManager.RegisterHandler('$/cancelRequest', TCancel);
-  }
 end.
 

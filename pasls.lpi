@@ -72,7 +72,7 @@
         <IsPartOfProject Value="True"/>
       </Unit1>
       <Unit2>
-        <Filename Value="uerrors.pas"/>
+        <Filename Value="ujsonrpc.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit2>
       <Unit3>

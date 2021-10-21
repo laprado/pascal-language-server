@@ -24,294 +24,110 @@ program pasls;
 
 uses
   Classes, SysUtils, iostream, streamex, udebug, ubufferedreader, jsonstream,
-  upackages, uerrors, uinitialize, utextdocument, uutils;
+  upackages, ujsonrpc, uinitialize, utextdocument, uutils;
 
-type
-  TRpcIdKind = (ridString, ridInteger, ridNull);
-
-  TRpcId = record
-    Kind: TRpcIdKind;
-    Str: string;
-    Int: Integer;
-  end;
-
-  TRpcRequest = record
-    Version: string;
-    Method:  string;
-    Id:      TRpcId;
-  end;
-
-function ReadLspRequest(Reader: TBufferedReader): TStringStream;
+procedure SendError(Rpc: TRpcPeer; Id: TRpcId; Code: Integer; const Msg: string);
 var
-  Header, HeaderKey, HeaderVal:  string;
-  Idx, Len:                      Integer;
+  Response: TRpcResponse;
 begin
-  Result := nil;
-
-  Header := Reader.ReadLine;
-  if Header = '' then
-    exit;
-
-  Len := 0;
-  while Header <> '' do
-  begin
-    Idx := Pos(':', Header);
-    HeaderKey := Copy(Header, 1, Idx - 1);
-    Delete(Header, 1, Idx);
-    HeaderVal := Trim(Header);
-    if HeaderKey = 'Content-Length' then
-      Len := StrToInt(HeaderVal);
-    Header := Reader.ReadLine;
-  end;
-
-  if Len = 0 then
-    raise EParserError.Create('Invalid request body.');
-
-  Result := TStringStream.Create();
+  Response := nil;
   try
-    Result.SetSize(Len);  
-    Reader.BlockRead(Result.Bytes[0], Len);
-  except
-    FreeAndNil(Result);
-  end;
-end;
-
-procedure WriteLspResponse(var f: TextFile; Body: TStringStream);
-const
-  ContentType: string = 'application/vscode-jsonrpc; charset=utf-8';
-begin
-  Write(f, 'Content-Type: ', ContentType, #13#10);
-  Write(f, 'Content-Length: ', Body.Size, #13#10);
-  Write(f, #13#10);
-  Write(f, Body.DataString);
-  Flush(f);
-end;
-
-function ParseRpcRequest(Stream: TStream): TRpcRequest;
-var
-  Reader: TJsonReader;
-  Key:    string;
-begin
-  Result.Method  := '';
-  Result.Version := '';
-  Result.Id.Kind := ridNull;
-  Reader         := nil;
-  try
-    Reader := TJsonReader.Create(Stream);
-
-    if Reader.Dict then
-      while (Reader.Advance <> jsDictEnd) and Reader.key(Key) do
-      begin
-        if Key = 'jsonrpc' then
-          Reader.Str(Result.Version)
-        else if Key = 'method' then
-          Reader.Str(Result.Method)
-        else if (Key = 'id') and Reader.Str(Result.Id.Str) then
-          Result.Id.Kind := ridString
-        else if (Key = 'id') and Reader.Number(Result.Id.Int) then
-          Result.Id.Kind := ridInteger
-        else if (Key = 'id') and Reader.Null then
-          Result.Id.Kind := ridNull;
-      end;
-
-    if Reader.LastError <> jeNoError then
-      raise EParseError.CreateFmt(
-        'Invalid Request. JSON error @%d: %s',
-        [Reader.LastErrorPosition, Reader.LastErrorMessage]
-      );
-
-    if (Result.Version <> '2.0') then
-      raise EInvalidRequest.Create('No or invalid jsonrpc version specified. Must be 2.0.');
-
-    if (Result.Method = '') then
-      raise EInvalidRequest.Create('No method specified.');
+    Response := TRpcResponse.CreateError(Id, Code, Msg);
+    Rpc.Send(Response);
   finally
-    FreeAndNil(Reader);
+    FreeAndNil(Response);
   end;
 end;
 
-function CreateParamReader(Stream: TStream): TJsonReader;
-var
-  Key: string;
+procedure Dispatch(Rpc: TRpcPeer; Request: TRpcRequest);
 begin
-  Result := TJsonReader.Create(Stream);
-  if Result.Dict then
-    while Result.Advance <> jsDictEnd do
-      if Result.Key(Key) and (Key = 'params') then
-        exit;
-end;
-
-procedure BeginRpcResponse(Writer: TJsonWriter; Id: TRpcId);
-begin
-  Writer.Dict;
-
-  Writer.Key('jsonrpc');
-  Writer.Str('2.0');
-
-  Writer.Key('id'); 
-  case Id.Kind of
-    ridString:  Writer.Str(Id.Str);
-    ridInteger: Writer.Number(Id.Int);
-    else        Writer.Null;
-  end;
-end;
-
-procedure EndRpcResponse(Writer: TJsonWriter);
-begin
-  Writer.DictEnd;
-end;
-
-function DispatchRpc(Method: String; Parameters: TJsonReader; Response: TJsonWriter): Boolean;
-begin
-  Result := true;
-
-  if Method = 'initialize' then
-    Initialize(Parameters, Response)
-  else if Method = 'initialized' then
-    Result := false
-  else if Method = 'shutdown' then
-    Result := false
-  else if Method = 'textDocument/completion' then
-    TextDocument_Completion(Parameters, Response)
-  else if Method = 'textDocument/signatureHelp' then
-    TextDocument_SignatureHelp(Parameters, Response)
-  else if Method = 'textDocument/didOpen' then
-  begin
-    TextDocument_DidOpen(Parameters);
-    Result := false;
-  end
-  else if Method = 'textDocument/didChange' then
-  begin
-    TextDocument_DidChange(Parameters);
-    Result := false;
-  end
-  else if Method = 'exit' then
-    Result := false
-  else if Method = '$/cancelRequest' then
-    Result := false
+  if Request.Method = 'initialize' then
+    Initialize(Rpc, Request)
+  else if Request.Method = 'initialized' then
+  else if Request.Method = 'shutdown' then
+  else if Request.Method = 'textDocument/completion' then
+    TextDocument_Completion(Rpc, Request)
+  else if Request.Method = 'textDocument/signatureHelp' then
+    TextDocument_SignatureHelp(Rpc, Request)
+  else if Request.Method = 'textDocument/didOpen' then
+    TextDocument_DidOpen(Rpc, Request)
+  else if Request.Method = 'textDocument/didChange' then
+    TextDocument_DidChange(Rpc, Request)
+  else if Request.Method = 'exit' then
+  else if Request.Method = '$/cancelRequest' then
   else
-    raise EMethodNotFound.CreateFmt('Method not found: %s', [Method]);
+    raise ERpcError.CreateFmt(jsrpcMethodNotFound, 'Method not found: %s', [Request.Method]);
 end;
 
-procedure Main(Reader: TBufferedReader{; Output: TextFile});
+procedure Main(Rpc: TRpcPeer);
 var
-  rid:               Integer;
-  Request, Response: TStringStream;
-  RpcRequest:        TRpcRequest;
-  JsonReader:        TJsonReader;
-  JsonWriter:        TJsonWriter;
-  HaveResult:        Boolean;
+  Request: TRpcRequest;
 begin
-  rid := 0;
-
   while True do
   begin
-    Response   := nil;
-    Request    := nil;
-    JsonWriter := nil;
-    JsonReader := nil;
-    HaveResult := false;
-
+    Request := nil;
     try
-      try
-        Response   := TStringStream.Create;
-        JsonWriter := TJsonWriter.Create(Response);
+      Request := Rpc.Receive;
 
-        Request    := ReadLspRequest(Reader);
-        if Request = nil then
-        begin  
-          DebugLog('** End of stream, exiting **');
-          exit;
-        end;
-
-        DebugLog('> Request (%d): '#10'%s', [rid, Copy(Request.DataString, 1, 2000)]);
-        Inc(rid);
-
-        RpcRequest := ParseRpcRequest(Request);
-        Request.Position := 0; // Rewind
-        JsonReader := CreateParamReader(Request);
-
-        BeginRpcResponse(JsonWriter, RpcRequest.Id);
-        JsonWriter.Key('result');
-        HaveResult := DispatchRpc(RpcRequest.Method, JsonReader, JsonWriter);
-        if not HaveResult then
-          JsonWriter.Null;
-        EndRpcResponse(JsonWriter);
-
-      except
-        on E: ERpcException do
-        begin
-          assert(Response <> nil);
-
-          // Throw away any partial responses, restart from scratch
-          Response.Clear;
-          FreeAndNil(JsonWriter);
-          JsonWriter := TJsonWriter.Create(Response);
-
-          // Write error response
-          BeginRpcResponse(JsonWriter, RpcRequest.Id);
-          JsonWriter.Key('error');
-          JsonWriter.Dict;
-            JsonWriter.Key('code');
-            JsonWriter.Number(E.Code);
-
-            JsonWriter.Key('message');
-            JsonWriter.Str(E.Message);
-          JsonWriter.DictEnd;
-          EndRpcResponse(JsonWriter);
-
-          HaveResult := true;
-        end;
+      if Request = nil then
+      begin  
+        DebugLog('** End of stream, exiting **');
+        exit;
       end;
 
-      if HaveResult then
-      begin
-        WriteLspResponse(Output, Response);
-        DebugLog('< Response: '#10'%s', [Copy(Response.DataString, 1, 2000)]);
-      end
-      else
-        DebugLog('< No Response'#10);
-
+      try
+        Dispatch(Rpc, Request);
+      except
+        on E: ERpcError do
+          SendError(Rpc, Request.Id, E.Code, E.Message);
+      end;
     finally
       FreeAndNil(Request);
-      FreeAndNil(Response);
-      FreeAndNil(JsonWriter);
-      FreeAndNil(JsonReader);
     end;
   end;
 end;
 
 
 var
-  InputStream: TStream;
-  Transcript:  TStream;
-  Tee:         TStream;
-  InputReader: TBufferedReader;
+  InputStream:  TStream;
+  OutputStream: TStream;
+  Transcript:   TStream;
+  Tee:          TStream;
+
+  RpcPeer:      TRpcPeer;
 
 begin
-  InputStream := nil;
-  InputReader := nil;
-  Transcript  := nil;
-  Tee         := nil;
+  InputStream    := nil;
+  OutputStream   := nil;
+  Transcript     := nil;
+  Tee            := nil;
+  RpcPeer        := nil;
 
   try
-    InputStream := TIOStream.Create(iosInput);
+    InputStream  := TIOStream.Create(iosInput);
+    OutputStream := TIOStream.Create(iosOutput);
 
     {$IF 1}
-    Transcript := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmCreate or fmOpenWrite);
-    Tee := TTeeStream.Create(InputStream, Transcript);
-    InputReader := TBufferedReader.Create(Tee);
+    Transcript   := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmCreate or fmOpenWrite);
+    Tee          := TTeeStream.Create(InputStream, Transcript);
+    RpcPeer      := TRpcPeer.Create(Tee, OutputStream);
     {$ELSE}
-    InputStream := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmOpenRead);
-    InputReader := TBufferedReader.Create(InputStream);
+    InputStream  := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmOpenRead);
+    RpcPeer      := TRpcPeer.Create(InputStream, OutputStream);
     {$ENDIF}
 
-    Main(InputReader);
+    try
+      Main(RpcPeer);
+    except
+      on E: Exception do
+        DebugLog('EXCEPTION: ' + E.Message);
+    end;
   finally
     FreeAndNil(InputStream);
+    FreeAndNil(OutputStream);
     FreeAndNil(Transcript);
     FreeAndNil(Tee);
-    FreeAndNil(InputReader);
+    FreeAndNil(RpcPeer);
   end;
 
 end.
