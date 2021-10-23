@@ -45,14 +45,17 @@ begin
     Initialize(Rpc, Request)
   else if Request.Method = 'initialized' then
   else if Request.Method = 'shutdown' then
-  else if Request.Method = 'textDocument/completion' then
-    TextDocument_Completion(Rpc, Request)
-  else if Request.Method = 'textDocument/signatureHelp' then
-    TextDocument_SignatureHelp(Rpc, Request)
   else if Request.Method = 'textDocument/didOpen' then
     TextDocument_DidOpen(Rpc, Request)
   else if Request.Method = 'textDocument/didChange' then
     TextDocument_DidChange(Rpc, Request)
+  else if Request.Method = 'textDocument/didClose' then
+  else if Request.Method = 'textDocument/completion' then
+    TextDocument_Completion(Rpc, Request)
+  else if Request.Method = 'textDocument/signatureHelp' then
+    TextDocument_SignatureHelp(Rpc, Request)
+  else if Request.Method = 'textDocument/declaration' then
+    TextDocument_Declaration(Rpc, Request)
   else if Request.Method = 'exit' then
   else if Request.Method = '$/cancelRequest' then
   else
@@ -97,6 +100,8 @@ var
   RpcPeer:      TRpcPeer;
 
 begin
+  WriteLn('WTF');
+
   InputStream    := nil;
   OutputStream   := nil;
   Transcript     := nil;
@@ -108,7 +113,12 @@ begin
     OutputStream := TIOStream.Create(iosOutput);
 
     {$IF 1}
-    Transcript   := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmCreate or fmOpenWrite);
+    try
+      Transcript := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmCreate or fmOpenWrite);
+    except           
+      //Transcript := TFileStream.Create('/Users/isopod/pasls-transcript-1.txt', fmCreate or fmOpenWrite);
+      Transcript := nil;
+    end;
     Tee          := TTeeStream.Create(InputStream, Transcript);
     RpcPeer      := TRpcPeer.Create(Tee, OutputStream);
     {$ELSE}

@@ -47,9 +47,12 @@ type
     destructor Destroy; override;
   end;
 
+  { TRpcResponse }
+
   TRpcResponse = class
   protected
     FBuffer: TMemoryStream;
+    FFinalized: Boolean;
     procedure InternalCreate(const Id: TRpcId);
     procedure Finalize;
   public
@@ -158,9 +161,12 @@ begin
   Writer.Str(Method);
 end;
 
+
 procedure TRpcResponse.Finalize;
 begin
-  Writer.DictEnd;
+  if not FFinalized then
+    Writer.DictEnd;
+  FFinalized := true;
 end;
 
 function TRpcResponse.AsString: string;

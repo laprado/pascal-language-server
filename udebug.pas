@@ -31,13 +31,23 @@ procedure DebugLog(const message: String; args: array of const); overload;
 
 implementation
 
+uses
+  iostream;
+
 var
   Debug: TStream;
 
 procedure InitDebugLog;
 begin
   if not Assigned(Debug) then
-    Debug := TFileStream.Create('/Users/isopod/pasls-log', fmCreate);
+  begin
+    try
+      Debug := TFileStream.Create('/Users/isopod/pasls-log', fmCreate);
+    except                  
+      //Debug := TFileStream.Create('/Users/isopod/pasls-log-1', fmCreate);
+      Debug := TIOStream.Create(iosError);
+    end;
+  end;
 end;
 
 procedure DebugLog(const message: String);

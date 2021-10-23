@@ -74,7 +74,7 @@ end;
 function TTeeStream.Read(var Buffer; Count: Longint): Longint;
 begin
   Result := FSource.Read(Buffer, Count);
-  if Result > 0 then
+  if (Result > 0) and Assigned(FCC) then
     FCC.WriteBuffer(Buffer, Result);
 end;
 

@@ -44,8 +44,7 @@ type
     Path: String;
 
     // Whether the hardcoded path should take precedence over a global package
-    // of the same name. Currently we only use the hardcoded Path if Prefer is
-    // true.
+    // of the same name.
     Prefer: Boolean;
 
     // Once we have resolved the dependency, we cache a reference to the package

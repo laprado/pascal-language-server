@@ -31,12 +31,13 @@ procedure TextDocument_DidOpen(Rpc: TRpcPeer; Request: TRpcRequest);
 procedure TextDocument_DidChange(Rpc: TRpcPeer; Request: TRpcRequest);
 procedure TextDocument_SignatureHelp(Rpc: TRpcPeer; Request: TRpcRequest);
 procedure TextDocument_Completion(Rpc: TRpcPeer; Request: TRpcRequest);
+procedure TextDocument_Declaration(Rpc: TRpcPeer; Request: TRpcRequest);
 
 implementation
 
 uses
   Classes, SysUtils, URIParser, CodeToolManager, CodeCache, IdentCompletionTool,
-  BasicCodeTools, PascalParserTool, CodeTree,
+  BasicCodeTools, PascalParserTool, CodeTree, FindDeclarationTool,
   udebug;
 
 function ParseChangeOrOpen(
@@ -419,6 +420,16 @@ begin
   Writer.DictEnd;
 end;
 
+function GetPrefix(Code: TCodeBuffer; X, Y: integer): string;
+var
+  PStart, PEnd: integer;
+  Line: String;
+begin
+  Line := Code.GetLine(Y);
+  GetIdentStartEndAtPosition(Line, X + 1, PStart, PEnd);
+  Result := Copy(Line, PStart, PEnd - PStart);
+end;
+
 procedure TextDocument_Completion(Rpc: TRpcPeer; Request: TRpcRequest);
 var
   Req:      TCompletionRequest;
@@ -427,15 +438,6 @@ var
   Response: TRpcResponse;
   Writer:   TJsonWriter;
 
-  function GetPrefix(Code: TCodeBuffer; X, Y: integer): string;
-  var
-    PStart, PEnd: integer;
-    Line: String;
-  begin
-    Line := Code.GetLine(Y);
-    GetIdentStartEndAtPosition(Line, X + 1, PStart, PEnd);
-    Result := Copy(Line, PStart, PEnd - PStart);
-  end;
 
 begin
   Response := nil;
@@ -496,6 +498,124 @@ begin
         Rpc.Send(Response);
       end;
     end;
+  finally
+    FreeAndNil(Response);
+  end;
+end;
+
+procedure TextDocument_Declaration(Rpc: TRpcPeer; Request: TRpcRequest);
+var
+  Req:             TCompletionRequest;
+  Code:            TCodeBuffer;
+  NewCode:         TCodeBuffer;
+  NewX, NewY, 
+  NewTopLine, 
+  BlockTopLine, 
+  BlockBottomLine: Integer;
+  Response:        TRpcResponse;
+  Writer:          TJsonWriter;
+  Found:           Boolean;
+  CursorFlag:      TFindFileAtCursorFlag;
+  FoundFileName:   string;
+  Prefix:          string;
+  Dir:             string;
+
+begin
+  Response := nil;
+  NewCode  := nil;
+  NewX     := 0;
+  NewY     := 0;
+  try
+    Req := ParseCompletionRequest(Request.Reader);
+
+    Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
+
+    if Code = nil then
+      raise ERpcError.CreateFmt(
+        jsrpcInvalidRequest,
+        'File not found: %s', [Req.Uri.Path + Req.Uri.Document]
+      );
+
+    Prefix := GetPrefix(Code, Req.X, Req.Y);
+
+    DebugLog('Find declaration: %d, %d "%s"', [Req.X, Req.Y, Prefix]);
+
+    Found := CodeToolBoss.FindDeclarationOfIdentifier(
+      Code, Req.X, Req.Y, PChar(Prefix), NewCode, NewX, NewY, NewTopLine
+    );
+
+    if not Found then
+      Found := CodeToolBoss.FindDeclarationInInterface(
+        Code, Prefix, NewCode, NewX, NewY, NewTopLine
+      );
+
+    {
+    if not Found then
+    begin
+      Found := CodeToolBoss.FindDeclarationOfPropertyPath(
+        Code, 'CodeToolBoss.' + Prefix, NewCode, NewX, NewY, NewTopLine
+      );
+    end;
+    }
+    if not Found then
+    begin
+      Found := CodeToolBoss.FindDeclaration(
+        Code, Req.X, Req.Y, NewCode, NewX, NewY, NewTopLine, BlockTopLine, BlockBottomLine
+      );
+    end;
+
+    if not Found then
+    begin
+      Dir := '';
+      FoundFileName := CodeToolBoss.FindUnitCaseInsensitive(Code, Prefix, Dir);
+      if FoundFileName <> '' then
+      begin
+        NewCode := CodeToolBoss.LoadFile(FoundFileName, false, false);
+        NewX := 1; NewY := 1;
+        Found := NewCode <> nil;
+      end;
+    end;
+
+    Response := TRpcResponse.Create(Request.Id);  
+    Writer   := Response.Writer;
+
+    if Found then
+    begin
+      Dec(NewY);
+      Dec(NewX);
+
+      Writer.Dict;
+        Writer.Key('uri');
+        Writer.Str('file://' + NewCode.Filename);
+
+        Writer.Key('range');
+        Writer.Dict;
+          Writer.Key('start');
+          Writer.Dict;
+            Writer.Key('line');
+            Writer.Number(NewY);
+
+            Writer.Key('character');
+            Writer.Number(NewX);
+          Writer.DictEnd;
+
+          Writer.Key('end');
+          Writer.Dict;
+            Writer.Key('line');
+            Writer.Number(NewY);
+
+            Writer.Key('character');
+            Writer.Number(NewX);
+          Writer.DictEnd;
+        Writer.DictEnd;
+      Writer.DictEnd;
+    end
+    else
+    begin
+      Writer.Null;
+    end;
+
+    Rpc.Send(Response);
   finally
     FreeAndNil(Response);
   end;
