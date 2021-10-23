@@ -33,7 +33,7 @@ implementation
 
 uses
   SysUtils, Classes, CodeToolManager, CodeToolsConfig, URIParser, LazUTF8,
-  DefineTemplates, FileUtil, LazFileUtils, udebug, uutils, upackages;
+  DefineTemplates, FileUtil, LazFileUtils, DOM, XMLRead, udebug, uutils, upackages;
 
 procedure ResolveDeps(Pkg: TPackage);
 var
@@ -229,7 +229,7 @@ end;
 
 procedure LoadAllPackagesUnderPath(const Dir: string);
 var
-  upackages,
+  Packages,
   SubDirectories:    TStringList;
   i:                 integer;     
   Pkg:               TPackage;
@@ -238,11 +238,11 @@ begin
     Exit;
 
   try
-    upackages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
 
-    for i := 0 to upackages.Count - 1 do
+    for i := 0 to Packages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(upackages[i]);
+      Pkg := GetPackageOrProject(Packages[i]);
       ResolveDeps(Pkg);
     end;
 
@@ -253,16 +253,16 @@ begin
       LoadAllPackagesUnderPath(SubDirectories[i]);
 
   finally
-    if Assigned(upackages) then
-      FreeAndNil(upackages);
-    if Assigned(upackages) then
+    if Assigned(Packages) then
+      FreeAndNil(Packages);
+    if Assigned(Packages) then
       FreeAndNil(SubDirectories);
   end;
 end;
 
 procedure GuessMissingDepsForAllPackages(const Dir: string);
 var
-  upackages,
+  Packages,
   SubDirectories:    TStringList;
   i:                 integer;
   Pkg:               TPackage;
@@ -271,11 +271,11 @@ begin
     Exit;
 
   try
-    upackages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
 
-    for i := 0 to upackages.Count - 1 do
+    for i := 0 to Packages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(upackages[i]);
+      Pkg := GetPackageOrProject(Packages[i]);
       GuessMissingDependencies(Pkg);
     end;
 
@@ -286,9 +286,9 @@ begin
       GuessMissingDepsForAllPackages(SubDirectories[i]);
 
   finally
-    if Assigned(upackages) then
-      FreeAndNil(upackages);
-    if Assigned(upackages) then
+    if Assigned(Packages) then
+      FreeAndNil(Packages);
+    if Assigned(Packages) then
       FreeAndNil(SubDirectories);
   end;
 end;
@@ -301,7 +301,7 @@ end;
 // project/package files? See also comment before ConfigurePackage.
 procedure ConfigurePaths(const Dir: string; const ParentPaths: TPaths);
 var
-  upackages,
+  Packages,
   SubDirectories:    TStringList;
   i:                 integer;
   Paths:             TPaths;
@@ -316,7 +316,7 @@ begin
   if IgnoreDirectory(Dir) then
     Exit;
 
-  upackages          := nil;
+  Packages          := nil;
   SubDirectories    := nil;
 
   Paths.IncludePath := Dir;
@@ -326,33 +326,33 @@ begin
   try
     DebugLog('--- %s ---', [Dir]);
 
-    upackages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
 
     // 1. Recursively merge search paths
-    for i := 0 to upackages.Count - 1 do
+    for i := 0 to Packages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(upackages[i]);
+      Pkg := GetPackageOrProject(Packages[i]);
       ResolvePaths(Pkg);
     end;
 
     // 2. Configure package directories
-    for i := 0 to upackages.Count - 1 do
+    for i := 0 to Packages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(upackages[i]);
+      Pkg := GetPackageOrProject(Packages[i]);
       ConfigurePackage(Pkg);
     end;
 
     // 3. Add merged search paths for all packages/projects in directory to
     //    search path of directory.
-    for i := 0 to upackages.Count - 1 do
+    for i := 0 to Packages.Count - 1 do
     begin
-      Pkg := GetPackageOrProject(upackages[i]);
+      Pkg := GetPackageOrProject(Packages[i]);
       Paths.IncludePath := MergePaths([Paths.IncludePath, Pkg.ResolvedPaths.IncludePath]);
       Paths.UnitPath    := MergePaths([Paths.UnitPath,    Pkg.ResolvedPaths.UnitPath]);
       Paths.SrcPath     := MergePaths([Paths.SrcPath,     Pkg.ResolvedPaths.SrcPath]);
     end;
 
-    if upackages.Count = 0 then
+    if Packages.Count = 0 then
     begin
       Paths.IncludePath := MergePaths([Paths.IncludePath, ParentPaths.IncludePath]);
       Paths.UnitPath    := MergePaths([Paths.UnitPath,    ParentPaths.UnitPath]);
@@ -399,17 +399,143 @@ begin
     for i := 0 to SubDirectories.Count - 1 do
       ConfigurePaths(SubDirectories[i], Paths);
   finally
-    if Assigned(upackages) then
-      FreeAndNil(upackages);
-    if Assigned(upackages) then
+    if Assigned(Packages) then
+      FreeAndNil(Packages);
+    if Assigned(Packages) then
       FreeAndNil(SubDirectories);
   end;
 end;
 
+// yuck
+var
+  _FakeAppName, _FakeVendorName: string;
+
+function GetFakeAppName: string;
+begin
+  Result := _FakeAppName;
+end;
+
+function GetFakeVendorName: string;
+begin
+  Result := _FakeVendorName;
+end;
+
+function MyGetAppConfigDir(AppName, Vendor: string; Global: Boolean): string;
+var
+  OldGetAppName:     TGetAppNameEvent;
+  OldGetVendorName:  TGetVendorNameEvent;
+begin
+  _FakeAppName     := AppName;
+  _FakeVendorName  := Vendor;
+  OldGetAppName    := OnGetApplicationName;
+  OldGetVendorName := OnGetVendorName;
+  try
+    OnGetApplicationName := @GetFakeAppName;
+    OnGetVendorName      := @GetFakeVendorName;
+    Result               := GetAppConfigDir(Global);
+  finally
+    OnGetApplicationName := OldGetAppName;
+    OnGetVendorName      := OldGetVendorName;
+  end;
+end;
+
+procedure GuessCodeToolConfig(Options: TCodeToolsOptions);
+var
+  ConfigDirs:         TStringList;
+  Dir:                string;
+  Doc:                TXMLDocument;
+  Root:               TDomNode;
+  EnvironmentOptions, FPCConfigs, Item1: TDomNode;
+  LazarusDirectory, FPCSourceDirectory, CompilerFilename, OS, CPU: string;
+
+  function LoadLazConfig(Path: string): Boolean;
+  begin
+    Doc    := nil;
+    Root   := nil;
+    Result := false;
+    try
+      ReadXMLFile(Doc, Path);
+      Root := Doc.DocumentElement;
+      if Root.NodeName = 'CONFIG' then
+        Result := true;
+    except
+      // Swallow
+    end;
+  end;
+
+  function GetVal(Parent: TDomNode; Ident: string; Attr: string='Value'): string;
+  var
+    Node, Value: TDomNode;
+  begin
+    Result := '';
+    if Parent = nil then
+      exit;
+    Node := Parent.FindNode(DOMString(Ident));
+    if Node = nil then
+      exit;
+    Value := Node.Attributes.GetNamedItem(Attr);
+    if Value = nil then
+      exit;
+    Result := string(Value.NodeValue);
+  end;
+begin
+  ConfigDirs := TStringList.Create;
+  try
+    ConfigDirs.Add(MyGetAppConfigDir('lazarus', '', False));
+    ConfigDirs.Add(GetUserDir + DirectorySeparator + '.lazarus');
+    ConfigDirs.Add(MyGetAppConfigDir('lazarus', '', True));  ;
+    for Dir in ConfigDirs do
+    begin
+      Doc := nil;
+      try
+        if LoadLazConfig(Dir + DirectorySeparator + 'environmentoptions.xml') then
+        begin
+          EnvironmentOptions := Root.FindNode('EnvironmentOptions');
+          LazarusDirectory   := GetVal(EnvironmentOptions, 'LazarusDirectory');
+          FPCSourceDirectory := GetVal(EnvironmentOptions, 'FPCSourceDirectory');
+          CompilerFilename   := GetVal(EnvironmentOptions, 'CompilerFilename');
+          if (Options.LazarusSrcDir = '') and (LazarusDirectory <> '') then
+            Options.LazarusSrcDir := LazarusDirectory;
+          if (Options.FPCSrcDir = '') and (FPCSourceDirectory <> '') then
+            Options.FPCSrcDir := FPCSourceDirectory;
+          if (Options.FPCPath = '') and (CompilerFilename <> '') then
+            Options.FPCPath := CompilerFilename;
+        end;
+      finally
+        FreeAndNil(Doc);
+      end;
+
+      Doc := nil;
+      try
+        if LoadLazConfig(Dir + DirectorySeparator + 'fpcdefines.xml') then
+        begin
+          FPCConfigs := Root.FindNode('FPCConfigs');
+          Item1 := nil;
+          if Assigned(FPCConfigs) and (FPCConfigs.ChildNodes.Count > 0) then
+            Item1 := FPCConfigs.ChildNodes[0];
+          OS  := GetVal(Item1, 'RealCompiler', 'OS');
+          CPU := GetVal(Item1, 'RealCompiler', 'CPU');
+          if (Options.TargetOS = '') and (OS <> '') then
+            Options.TargetOS := OS;
+          if (Options.TargetProcessor = '') and (CPU <> '') then
+            Options.TargetProcessor := CPU;
+        end;
+      finally
+        FreeAndNil(Doc);
+      end;
+    end;
+  finally
+    FreeAndNil(ConfigDirs);
+  end;
+
+end;
+
 procedure Initialize(Rpc: TRpcPeer; Request: TRpcRequest);
 var
-  CodeToolsOptions: TCodeToolsOptions;
+  Options: TCodeToolsOptions;
   Key:              string;
+  s:                string;
+
   RootUri:          string;
   Directory:        string;
   Paths:            TPaths;
@@ -417,21 +543,15 @@ var
   Reader:           TJsonReader;
   Writer:           TJsonWriter;
 begin
-  CodeToolsOptions := nil;
+  Options := nil;
   Response         := nil;
 
   try
-    Reader := Request.Reader;
-    if Reader.Dict then
-      while Reader.Advance <> jsDictEnd do
-        if Reader.Key(Key) and (Key = 'rootUri') then
-          Reader.Str(RootUri);
+    Options := TCodeToolsOptions.Create;
+    Options.InitWithEnvironmentVariables;
 
-    URIToFilename(RootUri, Directory);
-
-    CodeToolsOptions := TCodeToolsOptions.Create;
-
-    with CodeToolsOptions do
+    {
+    with Options do
     begin
       InitWithEnvironmentVariables;
       ProjectDir      := Directory;
@@ -446,10 +566,39 @@ begin
       FPCPath         := '/usr/local/bin/fpc';
       TestPascalFile  := '/tmp/testfile1.pas';
     end;
+    }     
+    Options.TestPascalFile  := GetTempFileName;//'/tmp/testfile1.pas';
+
+    Reader := Request.Reader;
+    if Reader.Dict then
+      while (Reader.Advance <> jsDictEnd) and Reader.Key(Key) do
+      begin
+        if Key = 'rootUri' then
+          Reader.Str(RootUri)
+        else if (Key = 'initializationOptions') and Reader.Dict then
+          while (Reader.Advance <> jsDictEnd) and Reader.Key(Key) do
+          begin
+            if (Key = 'PP') and Reader.Str(s) then
+              Options.FPCPath := s
+            else if (Key = 'FPCDIR') and Reader.Str(s) then
+              Options.FPCSrcDir := s
+            else if (Key = 'LAZARUSDIR') and Reader.Str(s) then
+              Options.LazarusSrcDir := s
+            else if (Key = 'FPCTARGET') and Reader.Str(s) then
+              Options.TargetOS := s
+            else if (Key = 'FPCTARGETCPU') and Reader.Str(s) then
+              Options.TargetProcessor := s;
+          end;
+      end;
+
+    // Try to fill in missing values from lazarus config
+    GuessCodeToolConfig(Options);
+
+    URIToFilename(RootUri, Directory);
 
     with CodeToolBoss do
     begin
-      Init(CodeToolsOptions);
+      Init(Options);
       IdentifierList.SortForHistory := True;
       IdentifierList.SortForScope   := True;
     end;
@@ -507,12 +656,21 @@ begin
           Writer.List;
           Writer.ListEnd;
         Writer.DictEnd;
+
+        Writer.Key('declarationProvider');
+        Writer.Bool(true);
+
+        Writer.Key('definitionProvider');
+        Writer.Bool(true);
       Writer.DictEnd;
+
+      Writer.Key('workspaceFolders');
+      Writer.Bool(true);
     Writer.DictEnd;
 
     Rpc.Send(Response);
   finally
-    FreeAndNil(CodeToolsOptions);
+    FreeAndNil(Options);
     FreeAndNil(Response);
   end;
 end;
