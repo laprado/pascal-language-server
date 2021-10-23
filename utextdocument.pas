@@ -508,18 +508,17 @@ var
   Req:             TCompletionRequest;
   Code:            TCodeBuffer;
   NewCode:         TCodeBuffer;
-  NewX, NewY, 
-  NewTopLine, 
-  BlockTopLine, 
-  BlockBottomLine: Integer;
+  NewX, NewY:      Integer;
   Response:        TRpcResponse;
   Writer:          TJsonWriter;
   Found:           Boolean;
-  CursorFlag:      TFindFileAtCursorFlag;
-  FoundFileName:   string;
   Prefix:          string;
-  Dir:             string;
 
+
+  CursorPos:       TCodeXYPosition;
+  XYPos:           TCodeXYPosition;
+  TopLine:         integer;
+  CTExprType:      TExpressionType;
 begin
   Response := nil;
   NewCode  := nil;
@@ -536,45 +535,28 @@ begin
         'File not found: %s', [Req.Uri.Path + Req.Uri.Document]
       );
 
+    if not CodeToolBoss.InitCurCodeTool(Code) then
+      raise ERpcError.CreateFmt(
+        jsrpcRequestFailed,
+        'Could not initialize code tool', []
+      );
+
     Prefix := GetPrefix(Code, Req.X, Req.Y);
 
     DebugLog('Find declaration: %d, %d "%s"', [Req.X, Req.Y, Prefix]);
 
-    Found := CodeToolBoss.FindDeclarationOfIdentifier(
-      Code, Req.X, Req.Y, PChar(Prefix), NewCode, NewX, NewY, NewTopLine
+    CursorPos.Code := Code;
+    CursorPos.X    := Req.X + 1;
+    CursorPos.Y    := Req.Y + 1;
+
+    Found := CodeToolBoss.CurCodeTool.FindDeclaration(
+      CursorPos, DefaultFindSmartHintFlags+[fsfSearchSourceName], CTExprType,
+      XYPos, TopLine
     );
 
-    if not Found then
-      Found := CodeToolBoss.FindDeclarationInInterface(
-        Code, Prefix, NewCode, NewX, NewY, NewTopLine
-      );
-
-    {
-    if not Found then
-    begin
-      Found := CodeToolBoss.FindDeclarationOfPropertyPath(
-        Code, 'CodeToolBoss.' + Prefix, NewCode, NewX, NewY, NewTopLine
-      );
-    end;
-    }
-    if not Found then
-    begin
-      Found := CodeToolBoss.FindDeclaration(
-        Code, Req.X, Req.Y, NewCode, NewX, NewY, NewTopLine, BlockTopLine, BlockBottomLine
-      );
-    end;
-
-    if not Found then
-    begin
-      Dir := '';
-      FoundFileName := CodeToolBoss.FindUnitCaseInsensitive(Code, Prefix, Dir);
-      if FoundFileName <> '' then
-      begin
-        NewCode := CodeToolBoss.LoadFile(FoundFileName, false, false);
-        NewX := 1; NewY := 1;
-        Found := NewCode <> nil;
-      end;
-    end;
+    NewCode := XYPos.Code;
+    NewX    := XYPos.X;
+    NewY    := XYPos.Y;
 
     Response := TRpcResponse.Create(Request.Id);  
     Writer   := Response.Writer;
