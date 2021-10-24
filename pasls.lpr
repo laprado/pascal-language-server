@@ -56,6 +56,8 @@ begin
     TextDocument_SignatureHelp(Rpc, Request)
   else if Request.Method = 'textDocument/declaration' then
     TextDocument_Declaration(Rpc, Request)
+  else if Request.Method = 'textDocument/definition' then
+    TextDocument_Definition(Rpc, Request)
   else if Request.Method = 'exit' then
   else if Request.Method = '$/cancelRequest' then
   else
@@ -100,8 +102,6 @@ var
   RpcPeer:      TRpcPeer;
 
 begin
-  WriteLn('WTF');
-
   InputStream    := nil;
   OutputStream   := nil;
   Transcript     := nil;

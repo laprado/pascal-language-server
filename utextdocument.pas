@@ -32,6 +32,7 @@ procedure TextDocument_DidChange(Rpc: TRpcPeer; Request: TRpcRequest);
 procedure TextDocument_SignatureHelp(Rpc: TRpcPeer; Request: TRpcRequest);
 procedure TextDocument_Completion(Rpc: TRpcPeer; Request: TRpcRequest);
 procedure TextDocument_Declaration(Rpc: TRpcPeer; Request: TRpcRequest);
+procedure TextDocument_Definition(Rpc: TRpcPeer; Request: TRpcRequest);
 
 implementation
 
@@ -317,8 +318,6 @@ var
   Prefix:   string;
   Response: TRpcResponse;
   Writer:   TJsonWriter;
-
-
 begin
   Response := nil;
   try
@@ -345,7 +344,10 @@ begin
 
         Writer.Key('items');
         Writer.List;
-          GetCompletionRecords(Code, Req.X + 1, Req.Y + 1, Prefix, false, @CompletionCallback, Writer);
+          GetCompletionRecords(
+            Code, Req.X + 1, Req.Y + 1, Prefix, false, 
+            @CompletionCallback, Writer
+          );
         Writer.ListEnd;
       Writer.DictEnd;
 
@@ -477,8 +479,6 @@ begin
         //Writer.Key('activeSignature');
       Writer.DictEnd;
 
-      //raise ERpcError.Create(-123, 'This is a test');
-
       Rpc.Send(Response);
     except
       on E: ERpcError do
@@ -513,28 +513,44 @@ end;
 
 // Go to declaration
 
-procedure TextDocument_Declaration(Rpc: TRpcPeer; Request: TRpcRequest);
+type
+  TJumpTarget = (jmpDeclaration, jmpDefinition);
+
+procedure TextDocument_JumpTo(
+  Rpc: TRpcPeer; Request: TRpcRequest; Target: TJumpTarget
+);
 var
-  Req:             TCompletionRequest;
-  Code:            TCodeBuffer;
-  NewCode:         TCodeBuffer;
-  NewX, NewY:      Integer;
-  Response:        TRpcResponse;
-  Writer:          TJsonWriter;
-  Found:           Boolean;
-  Prefix:          string;
+  Req:               TCompletionRequest;
+  Response:          TRpcResponse;
+  Writer:            TJsonWriter;
 
+  Code:              TCodeBuffer;
+  CurPos:            TCodeXYPosition;
+  NewPos:            TCodeXYPosition;
 
-  CursorPos:       TCodeXYPosition;
-  XYPos:           TCodeXYPosition;
-  TopLine:         integer;
-  CTExprType:      TExpressionType;
+  // Find declaration
+  FoundDeclaration:  Boolean;
+  ExprType:          TExpressionType;
+
+  // Determine type
+  IsProc:            Boolean;
+  CleanPos:          Integer;
+  Tool:              TCodeTool;
+  Node:              TCodeTreeNode;
+
+  // JumpToMethod
+  FoundMethod:       Boolean;
+  NewTopLine, 
+  BlockTopLine, 
+  BlockBottomLine:   Integer;
+  RevertableJump:    Boolean;
+
+  Success:           Boolean;
 begin
   Response := nil;
-  NewCode  := nil;
-  NewX     := 0;
-  NewY     := 0;
-  Found    := false;
+  Success  := false;
+  IsProc   := false;
+  Node     := nil;
   try
     Req := ParseCompletionRequest(Request.Reader);
 
@@ -552,57 +568,85 @@ begin
         'Could not initialize code tool', []
       );
 
-    Prefix := GetPrefix(Code, Req.X, Req.Y);
+    CurPos.Code := Code;
+    CurPos.X    := Req.X + 1;
+    CurPos.Y    := Req.Y + 1;
 
-    DebugLog('Find declaration: %d, %d "%s"', [Req.X, Req.Y, Prefix]);
-
-    CursorPos.Code := Code;
-    CursorPos.X    := Req.X + 1;
-    CursorPos.Y    := Req.Y + 1;
+    DebugLog(
+      'Find declaration/definition: %d, %d "%s"', 
+      [Req.X, Req.Y, GetPrefix(Code, Req.X, Req.Y)]
+    );
 
     try
-      Found := CodeToolBoss.CurCodeTool.FindDeclaration(
-        CursorPos, DefaultFindSmartHintFlags+[fsfSearchSourceName], CTExprType,
-        XYPos, TopLine
-      );
+      // Find declaration
+      FoundDeclaration := 
+        (Target in [jmpDeclaration, jmpDefinition]) and
+        CodeToolBoss.CurCodeTool.FindDeclaration(
+          CurPos, DefaultFindSmartHintFlags+[fsfSearchSourceName], 
+          ExprType, NewPos, NewTopLine
+
+        );
+      if FoundDeclaration then
+      begin
+        CurPos  := NewPos;
+        Success := true;
+
+        // Determine type
+        if CodeToolBoss.InitCurCodeTool(CurPos.Code) then
+        begin
+          Tool := CodeToolBoss.CurCodeTool;
+          assert(Assigned(Tool));
+          if Tool.CaretToCleanPos(CurPos, CleanPos) = 0 then
+            Node := Tool.FindDeepestNodeAtPos(CleanPos, false);
+          if Assigned(Node) then
+            IsProc := Node.Desc in [ctnProcedure, ctnProcedureHead];
+        end;
+      end;
+
+      // JumpToMethod
+      FoundMethod := 
+        FoundDeclaration and IsProc and (Target = jmpDefinition) and
+        CodeToolBoss.JumpToMethod(
+          CurPos.Code, CurPos.X, CurPos.Y, NewPos.Code, NewPos.X, NewPos.Y,
+          NewTopline, BlockTopLine, BlockBottomLine, RevertableJump
+        );
+
+      if FoundMethod then
+      begin
+        CurPos  := NewPos;
+        Success := true;
+      end;
     except
       on E: ECodeToolError do ; // Swallow
     end;
 
-    NewCode := XYPos.Code;
-    NewX    := XYPos.X;
-    NewY    := XYPos.Y;
-
     Response := TRpcResponse.Create(Request.Id);  
     Writer   := Response.Writer;
 
-    if Found then
+    if Success then
     begin
-      Dec(NewY);
-      Dec(NewX);
-
       Writer.Dict;
         Writer.Key('uri');
-        Writer.Str('file://' + NewCode.Filename);
+        Writer.Str('file://' + CurPos.Code.Filename);
 
         Writer.Key('range');
         Writer.Dict;
           Writer.Key('start');
           Writer.Dict;
             Writer.Key('line');
-            Writer.Number(NewY);
+            Writer.Number(CurPos.Y - 1);
 
             Writer.Key('character');
-            Writer.Number(NewX);
+            Writer.Number(CurPos.X - 1);
           Writer.DictEnd;
 
           Writer.Key('end');
           Writer.Dict;
             Writer.Key('line');
-            Writer.Number(NewY);
+            Writer.Number(CurPos.Y - 1);
 
             Writer.Key('character');
-            Writer.Number(NewX);
+            Writer.Number(CurPos.X - 1);
           Writer.DictEnd;
         Writer.DictEnd;
       Writer.DictEnd;
@@ -616,6 +660,16 @@ begin
   finally
     FreeAndNil(Response);
   end;
+end;
+
+procedure TextDocument_Declaration(Rpc: TRpcPeer; Request: TRpcRequest);
+begin
+  TextDocument_JumpTo(Rpc, Request, jmpDeclaration);
+end;
+
+procedure TextDocument_Definition(Rpc: TRpcPeer; Request: TRpcRequest);
+begin
+  TextDocument_JumpTo(Rpc, Request, jmpDefinition);
 end;
 
 end.
