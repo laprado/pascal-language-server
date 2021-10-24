@@ -37,7 +37,7 @@ implementation
 
 uses
   Classes, SysUtils, URIParser, CodeToolManager, CodeCache, IdentCompletionTool,
-  BasicCodeTools, PascalParserTool, CodeTree, FindDeclarationTool,
+  BasicCodeTools, PascalParserTool, CodeTree, FindDeclarationTool, CustomCodeTool,
   udebug;
 
 function ParseChangeOrOpen(
@@ -534,6 +534,7 @@ begin
   NewCode  := nil;
   NewX     := 0;
   NewY     := 0;
+  Found    := false;
   try
     Req := ParseCompletionRequest(Request.Reader);
 
@@ -559,10 +560,14 @@ begin
     CursorPos.X    := Req.X + 1;
     CursorPos.Y    := Req.Y + 1;
 
-    Found := CodeToolBoss.CurCodeTool.FindDeclaration(
-      CursorPos, DefaultFindSmartHintFlags+[fsfSearchSourceName], CTExprType,
-      XYPos, TopLine
-    );
+    try
+      Found := CodeToolBoss.CurCodeTool.FindDeclaration(
+        CursorPos, DefaultFindSmartHintFlags+[fsfSearchSourceName], CTExprType,
+        XYPos, TopLine
+      );
+    except
+      on E: ECodeToolError do ; // Swallow
+    end;
 
     NewCode := XYPos.Code;
     NewX    := XYPos.X;

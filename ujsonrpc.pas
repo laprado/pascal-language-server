@@ -29,6 +29,8 @@ uses
 type
   TRpcIdKind = (ridString, ridInteger, ridNull);
 
+  TRpcRequest = class;
+
   TRpcId = record
     Kind: TRpcIdKind;
     Str:  string;

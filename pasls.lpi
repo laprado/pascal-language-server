@@ -129,6 +129,7 @@
     <Exceptions Count="2">
       <Item1>
         <Name Value="ECodeToolError"/>
+        <Enabled Value="False"/>
       </Item1>
       <Item2>
         <Name Value="EFOpenError"/>
