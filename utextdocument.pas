@@ -38,8 +38,8 @@ implementation
 
 uses
   Classes, SysUtils, URIParser, CodeToolManager, CodeCache, IdentCompletionTool,
-  BasicCodeTools, PascalParserTool, CodeTree, FindDeclarationTool, CustomCodeTool,
-  udebug;
+  BasicCodeTools, PascalParserTool, CodeTree, FindDeclarationTool,
+  CustomCodeTool, udebug;
 
 function ParseChangeOrOpen(
   Reader: TJsonReader; out Uri: string; out Content: string; IsChange: Boolean
@@ -92,10 +92,10 @@ end;
 
 procedure TextDocument_DidChange(Rpc: TRpcPeer; Request: TRpcRequest);
 var
-  Code:        TCodeBuffer;
-  UriStr:      string;
-  Uri:         TURI;
-  Content:     string;
+  Code:    TCodeBuffer;
+  UriStr:  string;
+  Uri:     TURI;
+  Content: string;
 begin
   if ParseChangeOrOpen(Request.Reader, UriStr, Content, true) then
   begin
@@ -107,7 +107,7 @@ end;
 
 type
   TStringSlice = record
-    a, b: integer;
+    a, b:       Integer;
   end;
 
   TCompletionRec = record
@@ -118,10 +118,11 @@ type
     Desc:       String;
   end;
 
-  TCompletionCallback = procedure(const Rec: TCompletionRec; Writer: TJsonWriter);
+  TCompletionCallback = 
+    procedure (const Rec: TCompletionRec; Writer: TJsonWriter);
 
 procedure GetCompletionRecords(
-  Code: TCodeBuffer; X, Y: integer; Prefix: String; Exact: Boolean;
+  Code: TCodeBuffer; X, Y: Integer; Prefix: string; Exact: Boolean;
   Callback: TCompletionCallback; Writer: TJsonWriter
 );
 var
@@ -130,14 +131,14 @@ var
   ResultType:       string;
   Segment:          string;
   node, paramsNode: TCodeTreeNode;
-  SegmentLen:       integer;
+  SegmentLen:       Integer;
   Rec:              TCompletionRec;
 
-  function AppendString(var S: String; Suffix: String): TStringSlice;
+  function AppendString(var S: string; Suffix: string): TStringSlice;
   begin
     Result.a := Length(S) + 1;
     Result.b := Length(S) + Length(Suffix) + 1;
-    S := S + Suffix;
+    S        := S + Suffix;
   end;
 
 begin
@@ -158,7 +159,7 @@ begin
 
   for i := 0 to Count - 1 do
   begin
-    Identifier := CodeToolBoss.IdentifierList.FilteredItems[i];
+    Identifier       := CodeToolBoss.IdentifierList.FilteredItems[i];
 
     Rec.Text         := '';
     Rec.Identifier.a := 0;
@@ -322,8 +323,7 @@ begin
   Response := nil;
   try
     try
-      Req := ParseCompletionRequest(Request.Reader);
-
+      Req  := ParseCompletionRequest(Request.Reader);
       Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
 
       if Code = nil then
@@ -332,12 +332,12 @@ begin
           'File not found: %s', [Req.Uri.Path + Req.Uri.Document]
         );
 
-      Prefix := GetPrefix(Code, Req.X, Req.Y);
-
+      Prefix   := GetPrefix(Code, Req.X, Req.Y);
       DebugLog('Complete: %d, %d, "%s"', [Req.X, Req.Y, Prefix]);
 
       Response := TRpcResponse.Create(Request.Id);
       Writer   := Response.Writer;
+
       Writer.Dict;
         Writer.Key('isIncomplete');
         Writer.Bool(false);
@@ -389,7 +389,7 @@ end;
 
 procedure SignatureCallback(const Rec: TCompletionRec; Writer: TJsonWriter);
 var
-  i: integer;
+  i: Integer;
 begin
   Writer.Dict;
     Writer.Key('label');
@@ -418,7 +418,7 @@ end;
 procedure TextDocument_SignatureHelp(Rpc: TRpcPeer; Request: TRpcRequest);
 var
   Code:     TCodeBuffer;
-  ProcName: String;
+  ProcName: string;
   Req:      TCompletionRequest;
   Response: TRpcResponse;
   Writer:   TJsonWriter;
@@ -426,10 +426,10 @@ var
 const
   NullId: TRpcId = (Kind: ridNull);
 
-  function GetProcName(Code: TCodeBuffer; var X, Y: integer): String;
+  function GetProcName(Code: TCodeBuffer; var X, Y: Integer): string;
   var
     CodeContexts: TCodeContextInfo;
-    ProcStart: integer;
+    ProcStart:    Integer;
   begin
     Result := '';
 
@@ -448,7 +448,8 @@ const
     // But we actually need a position *inside* the procedure identifier.
     // Note that there may be whitespace, even newlines, between the first
     // parenthesis and the procedure.
-    while (ProcStart > 1) and (Code.Source[ProcStart] in ['(', ' ', #13, #10, #9]) do
+    while (ProcStart > 1) and 
+          (Code.Source[ProcStart] in ['(', ' ', #13, #10, #9]) do
       Dec(ProcStart);
 
     Code.AbsoluteToLineCol(ProcStart, Y, X);
@@ -459,20 +460,26 @@ begin
   Response := nil;
   try
     try
-      Req := ParseCompletionRequest(Request.Reader);
-
+      Req  := ParseCompletionRequest(Request.Reader);
       Code := CodeToolBoss.FindFile(Req.Uri.Path + Req.Uri.Document);
-      assert(Code <> nil);
+
+      if Code = nil then
+        raise ERpcError.CreateFmt(
+          jsrpcInvalidRequest,
+          'File not found: %s', [Req.Uri.Path + Req.Uri.Document]
+        );
 
       ProcName := GetProcName(Code, Req.X, Req.Y);
 
       Response := TRpcResponse.Create(Request.Id);
-      Writer := Response.Writer;
+      Writer   := Response.Writer;
 
       Writer.Dict;
         Writer.Key('signatures');
         Writer.List;
-          GetCompletionRecords(Code, Req.X, Req.Y, ProcName, true, @SignatureCallback, Writer);
+          GetCompletionRecords(
+            Code, Req.X, Req.Y, ProcName, true, @SignatureCallback, Writer
+          );
         Writer.ListEnd;
 
         //Writer.Key('activeParameter');
@@ -546,11 +553,13 @@ var
   RevertableJump:    Boolean;
 
   Success:           Boolean;
+
 begin
   Response := nil;
   Success  := false;
   IsProc   := false;
   Node     := nil;
+
   try
     Req := ParseCompletionRequest(Request.Reader);
 
@@ -603,7 +612,7 @@ begin
         end;
       end;
 
-      // JumpToMethod
+      // Try to jump to method implementation
       FoundMethod := 
         FoundDeclaration and IsProc and (Target = jmpDefinition) and
         CodeToolBoss.JumpToMethod(

@@ -26,45 +26,45 @@ interface
 type
   TPaths = record
     // Search path for units (OtherUnitFiles)
-    UnitPath:    String;
+    UnitPath:         string;
     // Search path for includes (IncludeFiles)
-    IncludePath: String;
+    IncludePath:      string;
     // Additional sources, not passed to compiler (SrcFiles)
-    SrcPath:     String;
+    SrcPath:          string;
   end;
 
   TPackage = class;
 
   TDependency = record
     // Name of the package, e.g. 'LCLBase'
-    Name: String;
+    Name:             string;
 
     // Projects may hardcode a path to a package. If a path was hardcoded, Path
     // will contain the expanded path, otherwise will be empty string.
-    Path: String;
+    Path:             string;
 
     // Whether the hardcoded path should take precedence over a global package
     // of the same name.
-    Prefer: Boolean;
+    Prefer:           Boolean;
 
     // Once we have resolved the dependency, we cache a reference to the package
     // here:
-    Package: TPackage;
+    Package:          TPackage;
   end;
 
   { TPackage }
 
   TPackage = class
     // Name of the package / project
-    //Name: String;
+    //Name:             string;
 
     // Home directory of the package / project
-    Dir: String;
+    Dir:              string;
 
     // Valid: True if the package was found, False otherwise. If False, this
     // is a dummy object whose only purpose is to prevent us from trying to load
     // a non-existing package multiple times.
-    Valid: Boolean;
+    Valid:            Boolean;
 
     // The search path resolution process involves several stages:
     // 0. Compile all 1st party search paths defined in the package file and
@@ -75,24 +75,24 @@ type
     // 3. Announce the search paths for the package home directory to
     //    CodeToolBoss.
 
-    DidResolveDependencies: Boolean; // True after step 1 is completed
-    DidResolvePaths: Boolean;        // True after step 2 is completed
-    Configured: Boolean;             // True after step 3 is completed
+    DidResolveDeps:   Boolean; // True after step 1 is completed
+    DidResolvePaths:  Boolean; // True after step 2 is completed
+    Configured:       Boolean; // True after step 3 is completed
 
-    Visited: Boolean; // Temporary flag while guessing dependencies.
+    Visited:          Boolean; // Temporary flag while guessing dependencies.
 
     // Expanded (i.e. absolute) 1st-degree search paths for this package
-    Paths: TPaths;
+    Paths:            TPaths;
 
     // List of dependencies of this package
-    Dependencies: array of TDependency;
+    Dependencies:     array of TDependency;
 
     // List of packages requiring this package
     // (only 1st degree dependencies)
-    RequiredBy: array of TPackage;
+    RequiredBy:       array of TPackage;
 
     // Search paths including dependencies
-    ResolvedPaths: TPaths;
+    ResolvedPaths:    TPaths;
 
     constructor Create;
   end;
@@ -101,11 +101,11 @@ type
   // if it is a package, or .lpi if it is a project.
   // Results are cached. If the file could not be loaded, the Valid member of
   // the result will be set to False.
-  function GetPackageOrProject(const FileName: String): TPackage;
+  function GetPackageOrProject(const FileName: string): TPackage;
 
   // Get the location of a global package by its name.
   // E.g. 'LCLBase'  -> '/Applications/Lazarus/lcl/lclbase.lpk'
-  function LookupGlobalPackage(const Name: String): String;
+  function LookupGlobalPackage(const Name: string): string;
 
 implementation
 
@@ -115,13 +115,13 @@ uses
 
 var
   PkgNameToPath: TFPStringHashTable;
-  // Path -> TPackage
-  PkgCache: TFPObjectHashTable;
+  // Map Path -> TPackage
+  PkgCache:      TFPObjectHashTable;
 
 procedure PopulateGlobalPackages;
 var
-  Files: TStringList;
-  FileName, Name: String;
+  Files:          TStringList;
+  FileName, Name: string;
 begin
   Files := TStringList.Create;
   try
@@ -137,17 +137,19 @@ begin
   end;
 end;
 
-procedure LoadPackageOrProject(const FileName: String);
+procedure LoadPackageOrProject(const FileName: string);
 var
-  Doc: TXMLDocument;
-  Root: TDomNode;
+  Doc:     TXMLDocument;
+  Root:    TDomNode;
   Package: TPackage;
 
-  function GetAdditionalPaths(SearchPaths: TDomNode; const What: String): String;
+  function GetAdditionalPaths(
+    SearchPaths: TDomNode; const What: string
+  ): String;
   var
     Node: TDomNode;
     Segments: TStringArray;
-    S, Segment, AbsSegment: String;
+    S, Segment, AbsSegment: string;
   begin
     Result := '';
 
@@ -174,7 +176,6 @@ var
     Package.Paths.IncludePath := Package.Dir;
     Package.Paths.UnitPath    := Package.Dir;
 
-
     CompilerOptions := Root.FindNode('CompilerOptions');
     if not Assigned(CompilerOptions) then
       Exit;
@@ -196,9 +197,10 @@ var
 
   procedure LoadDeps;
   var
-    Deps, Item, Name, Path, Prefer: TDomNode;
-    Dep: TDependency;
-    i, DepCount: integer;
+    Deps, Item, Name, 
+    Path, Prefer:      TDomNode;
+    Dep:               TDependency;
+    i, DepCount:       Integer;
   begin
     if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
       Deps := Root.FindNode('RequiredPkgs')
@@ -213,21 +215,22 @@ var
 
     for i := 0 to Deps.ChildNodes.Count - 1 do
     begin
-      Item := Deps.ChildNodes.Item[i];
+      Item        := Deps.ChildNodes.Item[i];
 
-      Name := Item.FindNode('PackageName');
+      Name        := Item.FindNode('PackageName');
       if not Assigned(Name) then
         continue;
 
-      Name := Name.Attributes.GetNamedItem('Value');
+      Name        := Name.Attributes.GetNamedItem('Value');
       if not Assigned(Name) then
         continue;
 
-      Dep.Name := Name.NodeValue; 
-      Dep.Prefer := False;
+      Dep.Name    := Name.NodeValue; 
+      Dep.Prefer  := False;
       Dep.Package := nil;
 
       Path := Item.FindNode('DefaultFilename');
+
       if Assigned(Path) then
       begin
         Prefer := Path.Attributes.GetNamedItem('Prefer');
@@ -250,9 +253,9 @@ begin
   if Assigned(PkgCache[FileName]) then
     Exit;
 
-  Package := TPackage.Create;
+  Package       := TPackage.Create;
   Package.Valid := False;
-  Package.Dir := ExtractFilePath(FileName);
+  Package.Dir   := ExtractFilePath(FileName);
 
   PkgCache[FileName] := Package;
 
@@ -268,7 +271,6 @@ begin
         Root := Root.FindNode('Package')
       else
         Root := Root.FindNode('ProjectOptions');
-
 
       if not Assigned(Root) then
         Exit;
@@ -306,10 +308,10 @@ end;
 
 constructor TPackage.Create;
 begin
-  Valid      := False;
-  Configured := False;
-  DidResolvePaths   := False;
-  DidResolveDependencies := False;
+  Valid                  := False;
+  Configured             := False;
+  DidResolvePaths        := False;
+  DidResolveDeps := False;
 end;
 
 initialization

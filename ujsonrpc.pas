@@ -83,7 +83,9 @@ type
   public
     Code: Integer;
     constructor Create(ACode: Integer; const Msg: string);
-    constructor CreateFmt(ACode: Integer; const Fmt: string; args: array of const);
+    constructor CreateFmt(
+      ACode: Integer; const Fmt: string; args: array of const
+    );
   end;
 
 const
@@ -143,9 +145,12 @@ begin
   Writer.Key('result');
 end;
 
-constructor TRpcResponse.CreateError(Id: TRpcId; Code: Integer; const Msg: string);
+constructor TRpcResponse.CreateError(
+  Id: TRpcId; Code: Integer; const Msg: string
+);
 begin
   InternalCreate(Id);
+
   Writer.Key('error');
   Writer.Dict;
     Writer.Key('code');
@@ -257,19 +262,21 @@ begin
 
     if (Version <> '2.0') then
       raise ERpcError.Create(
-        jsrpcInvalidRequest, 'No or invalid jsonrpc version specified. Must be 2.0.'
+        jsrpcInvalidRequest, 
+        'No or invalid jsonrpc version specified. Must be 2.0.'
       );
 
     if (Method = '') then
       raise ERpcError.Create(
-        jsrpcInvalidRequest, 'No method specified.'
+        jsrpcInvalidRequest, 
+        'No method specified.'
       );
 
     FreeAndNil(Reader);
 
     // 2nd pass: Seek to params
     Buffer.Position := 0;
-    Reader  := TJsonReader.Create(Buffer);
+    Reader          := TJsonReader.Create(Buffer);
     if Reader.Dict then
       while Reader.Advance <> jsDictEnd do
         if Reader.Key(Key) and (Key = 'params') then
@@ -330,7 +337,9 @@ begin
   Code := ACode;
 end;
 
-constructor ERpcError.CreateFmt(ACode: Integer; const Fmt: string; args: array of const);
+constructor ERpcError.CreateFmt(
+  ACode: Integer; const Fmt: string; args: array of const
+);
 begin
   inherited CreateFmt(Fmt, args);
   Code := ACode;

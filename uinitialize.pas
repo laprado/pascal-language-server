@@ -33,7 +33,8 @@ implementation
 
 uses
   SysUtils, Classes, CodeToolManager, CodeToolsConfig, URIParser, LazUTF8,
-  DefineTemplates, FileUtil, LazFileUtils, DOM, XMLRead, udebug, uutils, upackages;
+  DefineTemplates, FileUtil, LazFileUtils, DOM, XMLRead, udebug, uutils,
+  upackages;
 
 procedure ResolveDeps(Pkg: TPackage);
 var
@@ -41,10 +42,10 @@ var
   DepPath: String;
   i: integer;
 begin
-  if Pkg.DidResolveDependencies then
+  if Pkg.DidResolveDeps then
     exit;
 
-  Pkg.DidResolveDependencies := True;
+  Pkg.DidResolveDeps := True;
 
   for i := low(Pkg.Dependencies) to high(Pkg.Dependencies) do
   begin
@@ -158,10 +159,10 @@ begin
 end;
 
 // Add required search paths to package's directory (and its subdirectories).
-// TODO: Should we also add the search paths to all of the other unit directories
-// specified in the package? This would probably be the correct way, but any
-// sane project structure will have the package/project file in the root of its
-// source anyway.
+// TODO: Should we also add the search paths to all of the other unit
+// directories specified in the package? This would probably be the correct way,
+// but any sane project structure will have the package/project file in the root
+// of its source anyway.
 procedure ConfigurePackage(Pkg: TPackage);
 var
   DirectoryTemplate,
@@ -238,7 +239,9 @@ begin
     Exit;
 
   try
-    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+    Packages := FindAllFiles(
+      Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory
+    );
 
     for i := 0 to Packages.Count - 1 do
     begin
@@ -271,7 +274,9 @@ begin
     Exit;
 
   try
-    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+    Packages := FindAllFiles(
+      Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory
+    );
 
     for i := 0 to Packages.Count - 1 do
     begin
@@ -326,7 +331,9 @@ begin
   try
     DebugLog('--- %s ---', [Dir]);
 
-    Packages := FindAllFiles(Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory);
+    Packages := FindAllFiles(
+      Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory
+    );
 
     // 1. Recursively merge search paths
     for i := 0 to Packages.Count - 1 do
@@ -532,19 +539,19 @@ end;
 
 procedure Initialize(Rpc: TRpcPeer; Request: TRpcRequest);
 var
-  Options: TCodeToolsOptions;
-  Key:              string;
-  s:                string;
+  Options:   TCodeToolsOptions;
+  Key:       string;
+  s:         string;
 
-  RootUri:          string;
-  Directory:        string;
-  Paths:            TPaths;
-  Response:         TRpcResponse;
-  Reader:           TJsonReader;
-  Writer:           TJsonWriter;
+  RootUri:   string;
+  Directory: string;
+  Paths:     TPaths;
+  Response:  TRpcResponse;
+  Reader:    TJsonReader;
+  Writer:    TJsonWriter;
 begin
-  Options := nil;
-  Response         := nil;
+  Options  := nil;
+  Response := nil;
 
   try
     Options := TCodeToolsOptions.Create;
@@ -567,7 +574,6 @@ begin
       TestPascalFile  := '/tmp/testfile1.pas';
     end;
     }     
-    Options.TestPascalFile  := GetTempFileName;//'/tmp/testfile1.pas';
 
     Reader := Request.Reader;
     if Reader.Dict then
@@ -596,6 +602,9 @@ begin
 
     URIToFilename(RootUri, Directory);
 
+    Options.ProjectDir     := Directory;
+    Options.TestPascalFile := GetTempFileName;
+
     with CodeToolBoss do
     begin
       Init(Options);
@@ -611,6 +620,7 @@ begin
     GuessMissingDepsForAllPackages(Directory);
     ConfigurePaths(Directory, Paths);
 
+    // Send response & announce our capabilities
     Response := TRpcResponse.Create(Request.Id);
     Writer   := Response.Writer;
 

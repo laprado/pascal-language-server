@@ -26,7 +26,9 @@ uses
   Classes, SysUtils, iostream, streamex, udebug, ubufferedreader, jsonstream,
   upackages, ujsonrpc, uinitialize, utextdocument, uutils;
 
-procedure SendError(Rpc: TRpcPeer; Id: TRpcId; Code: Integer; const Msg: string);
+procedure SendError(
+  Rpc: TRpcPeer; Id: TRpcId; Code: Integer; const Msg: string
+);
 var
   Response: TRpcResponse;
 begin
@@ -61,7 +63,9 @@ begin
   else if Request.Method = 'exit' then
   else if Request.Method = '$/cancelRequest' then
   else
-    raise ERpcError.CreateFmt(jsrpcMethodNotFound, 'Method not found: %s', [Request.Method]);
+    raise ERpcError.CreateFmt(
+      jsrpcMethodNotFound, 'Method not found: %s', [Request.Method]
+    );
 end;
 
 procedure Main(Rpc: TRpcPeer);
@@ -94,13 +98,14 @@ end;
 
 
 var
-  InputStream:  TStream;
-  OutputStream: TStream;
-  Transcript:   TStream;
-  Tee:          TStream;
+  InputStream:    TStream;
+  OutputStream:   TStream;
+  Transcript:     TStream;
+  Tee:            TStream;
 
-  RpcPeer:      TRpcPeer;
+  RpcPeer:        TRpcPeer;
 
+  TranscriptPath: string;
 begin
   InputStream    := nil;
   OutputStream   := nil;
@@ -108,21 +113,22 @@ begin
   Tee            := nil;
   RpcPeer        := nil;
 
+  TranscriptPath := '/Users/isopod/pasls-transcript.txt';
+
   try
     InputStream  := TIOStream.Create(iosInput);
     OutputStream := TIOStream.Create(iosOutput);
 
     {$IF 1}
     try
-      Transcript := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmCreate or fmOpenWrite);
+      Transcript := TFileStream.Create(TranscriptPath, fmCreate or fmOpenWrite);
     except           
-      //Transcript := TFileStream.Create('/Users/isopod/pasls-transcript-1.txt', fmCreate or fmOpenWrite);
-      Transcript := nil;
+      FreeAndNil(Transcript);
     end;
     Tee          := TTeeStream.Create(InputStream, Transcript);
     RpcPeer      := TRpcPeer.Create(Tee, OutputStream);
     {$ELSE}
-    InputStream  := TFileStream.Create('/Users/isopod/pasls-transcript.txt', fmOpenRead);
+    InputStream  := TFileStream.Create(TranscriptPath, fmOpenRead);
     RpcPeer      := TRpcPeer.Create(InputStream, OutputStream);
     {$ENDIF}
 

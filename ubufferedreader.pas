@@ -32,11 +32,11 @@ type
 
   TBufferedReader = class
   protected
-    FUnderlying:  TStream;
-    FBuf:         array of Byte;
-    FBufCapacity: LongInt;
-    FBufSize:     LongInt;
-    FBufOffset:   LongInt;
+    FUnderlying:     TStream;
+    FBuf:            array of Byte;
+    FBufCapacity:    LongInt;
+    FBufSize:        LongInt;
+    FBufOffset:      LongInt;
     FOwnsUnderlying: Boolean;
   public
     constructor Create(Underlying: TStream; OwnsUnderlying: Boolean=False);
@@ -80,14 +80,16 @@ end;
 
 { TBufferedReader }
 
-constructor TBufferedReader.Create(Underlying: TStream; OwnsUnderlying: Boolean);
+constructor TBufferedReader.Create(
+  Underlying: TStream; OwnsUnderlying: Boolean
+);
 begin
-  FUnderlying  := Underlying;
-  FBufCapacity := 1024;
-  FBufOffset   := 0;
-  FBufSize     := 0;
-  SetLength(FBuf, FBufCapacity);
+  FUnderlying     := Underlying;
+  FBufCapacity    := 1024;
+  FBufOffset      := 0;
+  FBufSize        := 0;
   FOwnsUnderlying := OwnsUnderlying;
+  SetLength(FBuf, FBufCapacity);
 end;
 
 destructor TBufferedReader.Destroy;
@@ -125,7 +127,8 @@ var
     i: integer;
   begin
     for i := FBufOffset to FBufSize - 1 do
-      if (Chr(FBuf[i]) = #13) and ((i = FBufSize - 1) or (Chr(FBuf[i+1]) = #10)) then
+      if (Chr(FBuf[i]) = #13) and 
+         ((i = FBufSize - 1) or (Chr(FBuf[i+1]) = #10)) then
       begin
         Result := i;
         exit;

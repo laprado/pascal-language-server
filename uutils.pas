@@ -23,13 +23,13 @@ unit uutils;
 
 interface
 
-function MergePaths(Paths: array of String): String;
+function MergePaths(Paths: array of string): string;
 
 implementation
 
-function MergePaths(Paths: array of String): String;
+function MergePaths(Paths: array of string): string;
 var
-  i: integer;
+  i: Integer;
 begin
   Result := '';
   for i := low(Paths) to high(Paths) do
