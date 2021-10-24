@@ -332,6 +332,10 @@ const
 
     ProcStart := CodeContexts.StartPos;
 
+    // Find closest opening parenthesis
+    while (ProcStart > 1) and (Code.Source[ProcStart] <> '(') do
+      Dec(ProcStart);
+
     // ProcStart point to the parenthesis before the first parameter.
     // But we actually need a position *inside* the procedure identifier.
     // Note that there may be whitespace, even newlines, between the first
