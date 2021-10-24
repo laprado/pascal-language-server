@@ -166,6 +166,7 @@ begin
     Rec.ResultType.b := 0;
     Rec.Parameters   := nil;
     Rec.Desc         := '';
+    ResultType       := '';
 
     if (not Exact) or (CompareText(Identifier.Identifier, Prefix) = 0) then
     begin
