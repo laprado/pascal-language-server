@@ -100,47 +100,122 @@ end;
 var
   InputStream:    TStream;
   OutputStream:   TStream;
+  DebugStream:    TStream;
   Transcript:     TStream;
   Tee:            TStream;
 
   RpcPeer:        TRpcPeer;
 
-  TranscriptPath: string;
+  TranscriptPath: string  = '';
+  LogPath:        string  = '';
+  SaveReplay:     Boolean = false;
+  LoadReplay:     Boolean = false;
+
+procedure PrintUsage;
+begin
+  // TODO: Implement
+end;
+
+procedure ParseOptions;
+var
+  i: integer;
+begin
+  i := 1;
+  while i <= ParamCount do
+  begin
+    if (ParamStr(i) = '--save-log') and (i < ParamCount) then
+    begin
+      LogPath        := ParamStr(i + 1);
+      Inc(i);
+    end
+    else if (ParamStr(i) = '--save-replay') and (i < ParamCount) then
+    begin
+      SaveReplay     := true;
+      TranscriptPath := ParamStr(i + 1);
+      Inc(i);
+    end
+    else if (ParamStr(i) = '--replay') and (i < ParamCount) then
+    begin
+      LoadReplay     := true;
+      TranscriptPath := ParamStr(i + 1);
+      Inc(i);
+    end
+    else
+    begin
+      PrintUsage;
+      break;
+    end;
+    Inc(i);
+  end;
+end;
+
 begin
   InputStream    := nil;
   OutputStream   := nil;
+  DebugStream    := nil;
   Transcript     := nil;
   Tee            := nil;
   RpcPeer        := nil;
 
-  TranscriptPath := '/Users/isopod/pasls-transcript.txt';
+  ParseOptions;
+
+  if LogPath <> '' then
+    try
+      if LogPath = '-' then
+        DebugStream := TIOStream.Create(iosError)
+      else
+        DebugStream := TFileStream.Create(LogPath, fmCreate);
+    except
+      DebugStream := TIOStream.Create(iosError);
+    end;
+
+  InitLog(DebugStream);
+
+  if LoadReplay and SaveReplay then
+  begin
+    DebugLog('You specified both --save-replay and --replay. Ignoring.');
+    LoadReplay := false;
+    SaveReplay := false;
+  end;
 
   try
     InputStream  := TIOStream.Create(iosInput);
     OutputStream := TIOStream.Create(iosOutput);
 
-    {$IF 1}
-    try
-      Transcript := TFileStream.Create(TranscriptPath, fmCreate or fmOpenWrite);
-    except           
-      FreeAndNil(Transcript);
+    if SaveReplay then
+    begin
+      try
+        Transcript := TFileStream.Create(TranscriptPath, fmCreate);
+      except
+        DebugLog(
+          'Could not create replay file "%s".',
+          [TranscriptPath]
+        );
+        FreeAndNil(Transcript);
+      end;
+      Tee          := TTeeStream.Create(InputStream, Transcript);
+      RpcPeer      := TRpcPeer.Create(Tee, OutputStream);
+    end 
+    else if LoadReplay then
+    begin
+      InputStream  := TFileStream.Create(TranscriptPath, fmOpenRead);
+      RpcPeer      := TRpcPeer.Create(InputStream, OutputStream);
+    end
+    else
+    begin
+      RpcPeer      := TRpcPeer.Create(InputStream, OutputStream);
     end;
-    Tee          := TTeeStream.Create(InputStream, Transcript);
-    RpcPeer      := TRpcPeer.Create(Tee, OutputStream);
-    {$ELSE}
-    InputStream  := TFileStream.Create(TranscriptPath, fmOpenRead);
-    RpcPeer      := TRpcPeer.Create(InputStream, OutputStream);
-    {$ENDIF}
 
     try
       Main(RpcPeer);
     except
       on E: Exception do
-        DebugLog('EXCEPTION: ' + E.Message);
+        DebugLog('FATAL EXCEPTION: ' + E.Message);
     end;
   finally
     FreeAndNil(InputStream);
     FreeAndNil(OutputStream);
+    FreeAndNil(DebugStream);
     FreeAndNil(Transcript);
     FreeAndNil(Tee);
     FreeAndNil(RpcPeer);

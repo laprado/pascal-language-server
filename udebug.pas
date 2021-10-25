@@ -26,43 +26,32 @@ interface
 uses
   Classes, SysUtils;
 
-procedure DebugLog(const message: String); overload;
-procedure DebugLog(const message: String; args: array of const); overload;
+procedure InitLog(Destination: TStream);
+procedure DebugLog(const Msg: string); overload;
+procedure DebugLog(const Fmt: string; Args: array of const); overload;
 
 implementation
 
-uses
-  iostream;
-
 var
-  Debug: TStream;
+  DebugOutput: TStream;
 
-procedure InitDebugLog;
+procedure InitLog(Destination: TStream);
 begin
-  if not Assigned(Debug) then
-  begin
-    try
-      Debug := TFileStream.Create('/Users/isopod/pasls-log', fmCreate);
-    except                  
-      //Debug := TFileStream.Create('/Users/isopod/pasls-log-1', fmCreate);
-      Debug := TIOStream.Create(iosError);
-    end;
-  end;
+  DebugOutput := Destination;
 end;
 
-procedure DebugLog(const message: String);
+procedure DebugLog(const Msg: string);
 begin
-  InitDebugLog;
-  if message <> '' then
-    Debug.Write(message[1], Length(message));
+  if (DebugOutput <> nil) and (Msg <> '') then
+    DebugOutput.WriteBuffer(Msg[1], Length(Msg));
 end;
 
-procedure DebugLog(const message: String; args: array of const);
+procedure DebugLog(const Fmt: string; Args: array of const);
 var
-  S: String;
+  s: string;
 begin
-  S := Format(message, args) + #10;
-  DebugLog(S);
+  s := Format(Fmt, Args) + #10;
+  DebugLog(s);
 end;
 
 end.

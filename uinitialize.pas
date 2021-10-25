@@ -536,16 +536,16 @@ begin
     Options.InitWithEnvironmentVariables;
 
     {
+    // We no longer hardcode the paths, instead we try to load them from the
+    // Lazarus config files or from the initializationOptions passed by the
+    // Initialize RPC call (or environment variables).
+    // I'm just leaving this here as a reminder of what these variables should
+    // approximately look like.
     with Options do
     begin
-      InitWithEnvironmentVariables;
       ProjectDir      := Directory;
-
-      // Could be loaded from .lazarus/fpcdefines.xml ?
       TargetOS        := 'Darwin';
       TargetProcessor := 'x86_64';
-
-      // These could be loaded from .lazarus/environmentoptions.xml:
       FPCSrcDir       := '/usr/local/share/fpcsrc/3.2.0';
       LazarusSrcDir   := '/Applications/Lazarus';
       FPCPath         := '/usr/local/bin/fpc';
@@ -553,6 +553,7 @@ begin
     end;
     }     
 
+    // Parse initializationOptions
     Reader := Request.Reader;
     if Reader.Dict then
       while (Reader.Advance <> jsDictEnd) and Reader.Key(Key) do
@@ -575,10 +576,12 @@ begin
           end;
       end;
 
-    // Try to fill in missing values from lazarus config
-    GuessCodeToolConfig(Options);
-
+    // Set the root directory
+    // TODO: Support "workspaces"
     URIToFilename(RootUri, Directory);
+
+    // Try to fill in missing values by reading lazarus config
+    GuessCodeToolConfig(Options);
 
     Options.ProjectDir     := Directory;
     Options.TestPascalFile := GetTempFileName;
