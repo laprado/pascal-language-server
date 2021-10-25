@@ -24,8 +24,12 @@ unit uutils;
 interface
 
 function MergePaths(Paths: array of string): string;
+function GetConfigDirForApp(AppName, Vendor: string; Global: Boolean): string;
 
 implementation
+
+uses
+  sysutils;
 
 function MergePaths(Paths: array of string): string;
 var
@@ -38,6 +42,40 @@ begin
       Result := Result + ';' + Paths[i]
     else if (Result = '') and (Paths[i] <> '') then
       Result := Paths[i];
+  end;
+end;
+
+
+// yuck
+var
+  _FakeAppName, _FakeVendorName: string;
+
+function GetFakeAppName: string;
+begin
+  Result := _FakeAppName;
+end;
+
+function GetFakeVendorName: string;
+begin
+  Result := _FakeVendorName;
+end;
+
+function GetConfigDirForApp(AppName, Vendor: string; Global: Boolean): string;
+var
+  OldGetAppName:     TGetAppNameEvent;
+  OldGetVendorName:  TGetVendorNameEvent;
+begin
+  _FakeAppName     := AppName;
+  _FakeVendorName  := Vendor;
+  OldGetAppName    := OnGetApplicationName;
+  OldGetVendorName := OnGetVendorName;
+  try
+    OnGetApplicationName := @GetFakeAppName;
+    OnGetVendorName      := @GetFakeVendorName;
+    Result               := GetAppConfigDir(Global);
+  finally
+    OnGetApplicationName := OldGetAppName;
+    OnGetVendorName      := OldGetVendorName;
   end;
 end;
 

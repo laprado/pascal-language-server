@@ -36,6 +36,10 @@ uses
   DefineTemplates, FileUtil, LazFileUtils, DOM, XMLRead, udebug, uutils,
   upackages;
 
+
+// Resolve the dependencies of Pkg, and then the dependencies of the
+// dependencies and so on. Uses global registry and paths locally specified in
+// the package/project file (.lpk/.lpi) as a data source.
 procedure ResolveDeps(Pkg: TPackage);
 var
   Dep: ^TDependency;
@@ -74,11 +78,27 @@ begin
   end;
 end;
 
+// Try to fix missing dependencies.
+//
+// Consider the following scenario:
+//
+//   A requires: 
+//     - B (found) 
+//     - C (not found)
+//   B requires:
+//     - C (found)
+//
+// I.e. we could not find C in the search path of A, but did find it for B.
+// (The reason for this might be that B specified a default or preferred path
+// for dependency C). In that case we resolve the situation by using B's C also
+// for A.
 procedure GuessMissingDependencies(Pkg: TPackage);
 var
   Dep: ^TDependency;
   i: integer;
 
+  // Breadth-first search for a package of the specified name in the
+  // dependencies of Node.
   function GuessDependency(Node: TPackage; DepName: String): TPackage;
   var
     j: integer;
@@ -124,6 +144,7 @@ begin
   end;
 end;
 
+// Add the search paths of its dependencies to a package.
 procedure ResolvePaths(Pkg: TPackage);
 var
   Dep: TDependency;
@@ -158,7 +179,8 @@ begin
   end;
 end;
 
-// Add required search paths to package's directory (and its subdirectories).
+// Add required search paths to package's root directory (and its
+// subdirectories).
 // TODO: Should we also add the search paths to all of the other unit
 // directories specified in the package? This would probably be the correct way,
 // but any sane project structure will have the package/project file in the root
@@ -214,6 +236,7 @@ begin
   end;
 end;
 
+// Don't load packages from directories with these names...
 function IgnoreDirectory(const Dir: string): Boolean;
 var
   DirName: string;
@@ -228,6 +251,7 @@ begin
     (Pos('.app', DirName) > 0);
 end;
 
+// Load all packages in a directory and its subdirectories.
 procedure LoadAllPackagesUnderPath(const Dir: string);
 var
   Packages,
@@ -263,6 +287,7 @@ begin
   end;
 end;
 
+// Given a directory, fix missing deps for all packages in the directory.
 procedure GuessMissingDepsForAllPackages(const Dir: string);
 var
   Packages,
@@ -302,8 +327,6 @@ end;
 // If there are any projects (.lpi) or packages (.lpk) in the directory, use
 // (only) their search paths. Otherwise, inherit the search paths from the
 // parent directory ('ParentPaths').
-// TODO: Should we also add the search paths to other UnitPaths mentioned in the
-// project/package files? See also comment before ConfigurePackage.
 procedure ConfigurePaths(const Dir: string; const ParentPaths: TPaths);
 var
   Packages,
@@ -321,82 +344,54 @@ begin
   if IgnoreDirectory(Dir) then
     Exit;
 
-  Packages          := nil;
-  SubDirectories    := nil;
-
-  Paths.IncludePath := Dir;
-  Paths.UnitPath    := Dir;
-  Paths.SrcPath     := '';
+  Packages       := nil;
+  SubDirectories := nil;
 
   try
     DebugLog('--- %s ---', [Dir]);
 
+    // 1. Add local files to search path of current directory
+    DirectoryTemplate := TDefineTemplate.Create(
+      'Directory', '',
+      '', Dir,
+      da_Directory
+    );
+    UnitPathTemplate := TDefineTemplate.Create(
+      'Add to the UnitPath', '',
+      UnitPathMacroName, MergePaths([UnitPathMacro, Dir]),
+      da_Define
+    );
+    IncludeTemplate := TDefineTemplate.Create(
+      'Add to the Include path', '',
+      IncludePathMacroName, MergePaths([IncludePathMacro, Dir]),
+      da_Define
+    );
+    DirectoryTemplate.AddChild(UnitPathTemplate);
+    DirectoryTemplate.AddChild(IncludeTemplate);
+    CodeToolBoss.DefineTree.Add(DirectoryTemplate);
+
+    // 2. Load all packages in the current directory and configure their
+    //    paths.
     Packages := FindAllFiles(
       Dir, '*.lpi;*.lpk', False, faAnyFile and not faDirectory
     );
 
-    // 1. Recursively merge search paths
+    // 2a. Recursively resolve search paths for each package.
+    //     (Merge dependencies' search paths into own search path)
     for i := 0 to Packages.Count - 1 do
     begin
       Pkg := GetPackageOrProject(Packages[i]);
       ResolvePaths(Pkg);
     end;
 
-    // 2. Configure package directories
+    // 2b. For each package in the dependency tree, apply the package's
+    //     resulting search paths from step 1. to the package's source
+    //     directories. (Add to the CodeTools Define Tree)
     for i := 0 to Packages.Count - 1 do
     begin
       Pkg := GetPackageOrProject(Packages[i]);
       ConfigurePackage(Pkg);
     end;
-
-    // 3. Add merged search paths for all packages/projects in directory to
-    //    search path of directory.
-    for i := 0 to Packages.Count - 1 do
-    begin
-      Pkg := GetPackageOrProject(Packages[i]);
-      Paths.IncludePath := MergePaths([Paths.IncludePath, Pkg.ResolvedPaths.IncludePath]);
-      Paths.UnitPath    := MergePaths([Paths.UnitPath,    Pkg.ResolvedPaths.UnitPath]);
-      Paths.SrcPath     := MergePaths([Paths.SrcPath,     Pkg.ResolvedPaths.SrcPath]);
-    end;
-
-    if Packages.Count = 0 then
-    begin
-      Paths.IncludePath := MergePaths([Paths.IncludePath, ParentPaths.IncludePath]);
-      Paths.UnitPath    := MergePaths([Paths.UnitPath,    ParentPaths.UnitPath]);
-      Paths.SrcPath     := MergePaths([Paths.SrcPath,     ParentPaths.SrcPath]);
-    end;
-
-    // Inform CodeToolBoss
-
-    DirectoryTemplate := TDefineTemplate.Create(
-      'Directory', '',
-      '', Dir,
-      da_Directory
-    );
-
-    UnitPathTemplate := TDefineTemplate.Create(
-      'Add to the UnitPath', '',
-      UnitPathMacroName, MergePaths([UnitPathMacro, Paths.UnitPath]),
-      da_Define
-    );
-
-    IncludeTemplate := TDefineTemplate.Create(
-      'Add to the Include path', '',
-      IncludePathMacroName, MergePaths([IncludePathMacro, Paths.IncludePath]),
-      da_Define
-    );
-
-    SrcTemplate := TDefineTemplate.Create(
-      'Add to the Src path', '',
-      SrcPathMacroName, MergePaths([SrcPathMacro, Paths.SrcPath]),
-      da_Define
-    );
-
-    DirectoryTemplate.AddChild(UnitPathTemplate);
-    DirectoryTemplate.AddChild(IncludeTemplate);
-    DirectoryTemplate.AddChild(SrcTemplate);
-
-    CodeToolBoss.DefineTree.Add(DirectoryTemplate);
 
     DebugLog('  UnitPath: %s', [Paths.UnitPath]);
 
@@ -413,47 +408,24 @@ begin
   end;
 end;
 
-// yuck
-var
-  _FakeAppName, _FakeVendorName: string;
-
-function GetFakeAppName: string;
-begin
-  Result := _FakeAppName;
-end;
-
-function GetFakeVendorName: string;
-begin
-  Result := _FakeVendorName;
-end;
-
-function MyGetAppConfigDir(AppName, Vendor: string; Global: Boolean): string;
-var
-  OldGetAppName:     TGetAppNameEvent;
-  OldGetVendorName:  TGetVendorNameEvent;
-begin
-  _FakeAppName     := AppName;
-  _FakeVendorName  := Vendor;
-  OldGetAppName    := OnGetApplicationName;
-  OldGetVendorName := OnGetVendorName;
-  try
-    OnGetApplicationName := @GetFakeAppName;
-    OnGetVendorName      := @GetFakeVendorName;
-    Result               := GetAppConfigDir(Global);
-  finally
-    OnGetApplicationName := OldGetAppName;
-    OnGetVendorName      := OldGetVendorName;
-  end;
-end;
-
+// CodeTools needs to know the paths for the global packages, the FPC source
+// files, the path of the compiler and the target architecture.
+// Attempt to guess the correct settings from Lazarus config files.
 procedure GuessCodeToolConfig(Options: TCodeToolsOptions);
 var
   ConfigDirs:         TStringList;
   Dir:                string;
   Doc:                TXMLDocument;
-  Root:               TDomNode;
-  EnvironmentOptions, FPCConfigs, Item1: TDomNode;
-  LazarusDirectory, FPCSourceDirectory, CompilerFilename, OS, CPU: string;
+
+  Root,
+  EnvironmentOptions, 
+  FPCConfigs, 
+  Item1:              TDomNode;
+
+  LazarusDirectory, 
+  FPCSourceDirectory, 
+  CompilerFilename, 
+  OS, CPU:            string;
 
   function LoadLazConfig(Path: string): Boolean;
   begin
@@ -488,9 +460,9 @@ var
 begin
   ConfigDirs := TStringList.Create;
   try
-    ConfigDirs.Add(MyGetAppConfigDir('lazarus', '', False));
+    ConfigDirs.Add(GetConfigDirForApp('lazarus', '', False));
     ConfigDirs.Add(GetUserDir + DirectorySeparator + '.lazarus');
-    ConfigDirs.Add(MyGetAppConfigDir('lazarus', '', True));  ;
+    ConfigDirs.Add(GetConfigDirForApp('lazarus', '', True));  ;
     for Dir in ConfigDirs do
     begin
       Doc := nil;
@@ -534,7 +506,6 @@ begin
   finally
     FreeAndNil(ConfigDirs);
   end;
-
 end;
 
 procedure Initialize(Rpc: TRpcPeer; Request: TRpcRequest);
@@ -616,8 +587,11 @@ begin
     Paths.UnitPath    := '';
     Paths.SrcPath     := '';
 
+    // Load packages into our internal database and resolve dependencies
     LoadAllPackagesUnderPath(Directory);
     GuessMissingDepsForAllPackages(Directory);
+
+    // Configure CodeTools
     ConfigurePaths(Directory, Paths);
 
     // Send response & announce our capabilities
