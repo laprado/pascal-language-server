@@ -81,7 +81,7 @@ type
 
     Visited:          Boolean; // Temporary flag while guessing dependencies.
 
-    // Expanded (i.e. absolute) 1st-degree search paths for this package
+    // Absolute 1st-degree search paths for this package
     Paths:            TPaths;
 
     // List of dependencies of this package

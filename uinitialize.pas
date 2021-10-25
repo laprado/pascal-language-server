@@ -84,18 +84,18 @@ end;
 //
 //   A requires: 
 //     - B (found) 
-//     - C (not found)
+//     - C (NOT found)
 //   B requires:
 //     - C (found)
 //
-// I.e. we could not find C in the search path of A, but did find it for B.
-// (The reason for this might be that B specified a default or preferred path
-// for dependency C). In that case we resolve the situation by using B's C also
+// In other words, we could not find C for A, but did find C for B. (The
+// reason for this might be that B specified a default or preferred path for
+// dependency C). In this case we resolve the situation by using B's C also
 // for A.
 procedure GuessMissingDependencies(Pkg: TPackage);
 var
   Dep: ^TDependency;
-  i: integer;
+  i:   Integer;
 
   // Breadth-first search for a package of the specified name in the
   // dependencies of Node.
@@ -121,7 +121,6 @@ var
       end;
 
       // Not found, recurse
-
       for j := low(Node.RequiredBy) to high(Node.RequiredBy) do
       begin
         Result := GuessDependency(Node.RequiredBy[j], DepName);
@@ -179,53 +178,63 @@ begin
   end;
 end;
 
-// Add required search paths to package's root directory (and its
+// Add required search paths to package's source directories (and their
 // subdirectories).
-// TODO: Should we also add the search paths to all of the other unit
-// directories specified in the package? This would probably be the correct way,
-// but any sane project structure will have the package/project file in the root
-// of its source anyway.
 procedure ConfigurePackage(Pkg: TPackage);
 var
-  DirectoryTemplate,
-  IncludeTemplate,
-  UnitPathTemplate,
-  SrcTemplate:       TDefineTemplate;
-  Dep: TDependency;
+  Dep:      TDependency;
+  OtherSrc: TStringArray;
+  OtherDir: string;
+
+  procedure ConfigureSearchPath(const Dir: string);
+  var
+    DirectoryTemplate,
+    IncludeTemplate,
+    UnitPathTemplate,
+    SrcTemplate:       TDefineTemplate;
+  begin
+    DirectoryTemplate := TDefineTemplate.Create(
+      'Directory', '',
+      '', Dir,
+      da_Directory
+    );
+
+    UnitPathTemplate := TDefineTemplate.Create(
+      'Add to the UnitPath', '',
+      UnitPathMacroName, MergePaths([UnitPathMacro, Pkg.ResolvedPaths.UnitPath]),
+      da_DefineRecurse
+    );
+
+    IncludeTemplate := TDefineTemplate.Create(
+      'Add to the Include path', '',
+      IncludePathMacroName, MergePaths([IncludePathMacro, Pkg.ResolvedPaths.IncludePath]),
+      da_DefineRecurse
+    );
+
+    SrcTemplate := TDefineTemplate.Create(
+      'Add to the Src path', '',
+      SrcPathMacroName, MergePaths([SrcPathMacro, Pkg.ResolvedPaths.SrcPath]),
+      da_DefineRecurse
+    );
+
+    DirectoryTemplate.AddChild(UnitPathTemplate);
+    DirectoryTemplate.AddChild(IncludeTemplate);
+    DirectoryTemplate.AddChild(SrcTemplate);
+
+    CodeToolBoss.DefineTree.Add(DirectoryTemplate);
+  end;
 begin
   if Pkg.Configured then
     exit;
   Pkg.Configured := True;
  
-  DirectoryTemplate := TDefineTemplate.Create(
-    'Directory', '',
-    '', Pkg.Dir,
-    da_Directory
-  );
+  // Configure search path for package's (or project's) main source directory.
+  ConfigureSearchPath(Pkg.Dir);
 
-  UnitPathTemplate := TDefineTemplate.Create(
-    'Add to the UnitPath', '',
-    UnitPathMacroName, MergePaths([UnitPathMacro, Pkg.ResolvedPaths.UnitPath]),
-    da_DefineRecurse
-  );
-
-  IncludeTemplate := TDefineTemplate.Create(
-    'Add to the Include path', '',
-    IncludePathMacroName, MergePaths([IncludePathMacro, Pkg.ResolvedPaths.IncludePath]),
-    da_DefineRecurse
-  );
-
-  SrcTemplate := TDefineTemplate.Create(
-    'Add to the Src path', '',
-    SrcPathMacroName, MergePaths([SrcPathMacro, Pkg.ResolvedPaths.SrcPath]),
-    da_DefineRecurse
-  );
-
-  DirectoryTemplate.AddChild(UnitPathTemplate);
-  DirectoryTemplate.AddChild(IncludeTemplate);
-  DirectoryTemplate.AddChild(SrcTemplate);
-
-  CodeToolBoss.DefineTree.Add(DirectoryTemplate);
+  // Configure search path for other listed source directories.
+  OtherSrc := Pkg.Paths.SrcPath.Split([';'], TStringSplitOptions.ExcludeEmpty);
+  for OtherDir in OtherSrc do
+    ConfigureSearchPath(OtherDir);
 
   // Recurse
   for Dep in Pkg.Dependencies do
@@ -310,7 +319,6 @@ begin
     end;
 
     // Recurse into child directories
-
     SubDirectories := FindAllDirectories(Dir, False);
     for i := 0 to SubDirectories.Count - 1 do
       GuessMissingDepsForAllPackages(SubDirectories[i]);
@@ -385,8 +393,8 @@ begin
     end;
 
     // 2b. For each package in the dependency tree, apply the package's
-    //     resulting search paths from step 1. to the package's source
-    //     directories. (Add to the CodeTools Define Tree)
+    //     resulting search paths from the previous step to the package's source
+    //     directories. ("apply" = add to the CodeTools Define Tree)
     for i := 0 to Packages.Count - 1 do
     begin
       Pkg := GetPackageOrProject(Packages[i]);
@@ -396,7 +404,6 @@ begin
     DebugLog('  UnitPath: %s', [Paths.UnitPath]);
 
     // Recurse into child directories
-
     SubDirectories := FindAllDirectories(Dir, False);
     for i := 0 to SubDirectories.Count - 1 do
       ConfigurePaths(SubDirectories[i], Paths);
