@@ -15,12 +15,17 @@ bugs.
 ## Features
 
 - Code completion
-- Signature help (*new*)
-- Go to declaration (*new*)
-- Go to definition (*new*)
-- Automatic dependency resolution for `.lpk` and `.lpr` files (*new*)
+- Signature help
+- Go to declaration
+- Go to definition
+- Automatic dependency resolution for `.lpk` and `.lpr` files
 
 ## Building
+
+First, make sure, submodules are loaded:
+```
+git submodule update --init --recursive
+```
 
 To compile, open the project file in Lazarus or use the command line:
 
