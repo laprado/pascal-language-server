@@ -475,7 +475,7 @@ var
     Node := Parent.FindNode(DOMString(Ident));
     if Node = nil then
       exit;
-    Value := Node.Attributes.GetNamedItem(Attr);
+    Value := Node.Attributes.GetNamedItem(DOMString(Attr));
     if Value = nil then
       exit;
     Result := string(Value.NodeValue);

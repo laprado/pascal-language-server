@@ -423,9 +423,6 @@ var
   Response: TRpcResponse;
   Writer:   TJsonWriter;
 
-const
-  NullId: TRpcId = (Kind: ridNull);
-
   function GetProcName(Code: TCodeBuffer; var X, Y: Integer): string;
   var
     CodeContexts: TCodeContextInfo;

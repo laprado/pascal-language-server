@@ -126,7 +126,7 @@
     </Linking>
   </CompilerOptions>
   <Debugging>
-    <Exceptions Count="3">
+    <Exceptions Count="2">
       <Item1>
         <Name Value="ECodeToolError"/>
         <Enabled Value="False"/>
@@ -134,9 +134,6 @@
       <Item2>
         <Name Value="EFOpenError"/>
       </Item2>
-      <Item3>
-        <Name Value="Unknown"/>
-      </Item3>
     </Exceptions>
   </Debugging>
 </CONFIG>
