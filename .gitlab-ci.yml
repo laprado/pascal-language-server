@@ -1,0 +1,9 @@
+stages:
+  - build
+
+fedora-build:
+  stage: build
+  image: fedora-lazarus
+  script:
+    - cd server
+    - lazbuild pasls.lpr
