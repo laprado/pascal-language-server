@@ -42,9 +42,16 @@ uses
 // the package/project file (.lpk/.lpi) as a data source.
 procedure ResolveDeps(Pkg: TPackage);
 var
-  Dep: ^TDependency;
-  DepPath: String;
-  i: integer;
+  Dep:     ^TDependency;
+  DepPath: string;
+  i:       integer;
+  function IfThen(Cond: Boolean; const s: string): string;
+  begin
+    if Cond then
+      Result := s
+    else
+      Result := '';
+  end;
 begin
   if Pkg.DidResolveDeps then
     exit;
@@ -61,11 +68,14 @@ begin
 
     if DepPath = '' then
     begin
-      DebugLog('* Dependency %s: not found', [Dep^.Name]);
+      DebugLog('  Dependency %s: not found', [Dep^.Name]);
       continue;
     end;
 
-    DebugLog('* Dependency: %s -> %s', [Dep^.Name, DepPath]);
+    DebugLog(
+      '  Dependency: %s -> %s%s',
+      [Dep^.Name, DepPath, IfThen(DepPath = Dep^.Path, ' (hardcoded)')]
+    );
 
     Dep^.Package := GetPackageOrProject(DepPath);
 
@@ -164,16 +174,16 @@ begin
     ResolvePaths(Dep.Package);
 
     Pkg.ResolvedPaths.IncludePath := MergePaths([
-      Pkg.ResolvedPaths.IncludePath,
-      Dep.Package.ResolvedPaths.IncludePath
+      Pkg.ResolvedPaths.IncludePath{,
+      Dep.Package.ResolvedPaths.IncludePath}
     ]);
     Pkg.ResolvedPaths.UnitPath := MergePaths([
       Pkg.ResolvedPaths.UnitPath,
       Dep.Package.ResolvedPaths.UnitPath
     ]);
     Pkg.ResolvedPaths.SrcPath := MergePaths([
-      Pkg.ResolvedPaths.SrcPath,
-      Dep.Package.ResolvedPaths.SrcPath
+      Pkg.ResolvedPaths.SrcPath{,
+      Dep.Package.ResolvedPaths.SrcPath}
     ]);
   end;
 end;
@@ -192,6 +202,7 @@ var
     IncludeTemplate,
     UnitPathTemplate,
     SrcTemplate:       TDefineTemplate;
+    Paths:             TPaths;
   begin
     DirectoryTemplate := TDefineTemplate.Create(
       'Directory', '',
@@ -199,21 +210,30 @@ var
       da_Directory
     );
 
+    Paths.UnitPath    := MergePaths([UnitPathMacro,    Pkg.ResolvedPaths.UnitPath]);
+    Paths.IncludePath := MergePaths([IncludePathMacro, Pkg.ResolvedPaths.IncludePath]);
+    Paths.SrcPath     := MergePaths([SrcPathMacro,     Pkg.ResolvedPaths.SrcPath]);
+
+    DebugLog('%s', [Dir]);
+    DebugLog('  UnitPath:    %s', [Paths.UnitPath]);
+    DebugLog('  IncludePath: %s', [Paths.IncludePath]);
+    DebugLog('  SrcPath:     %s', [Paths.SrcPath]);
+
     UnitPathTemplate := TDefineTemplate.Create(
       'Add to the UnitPath', '',
-      UnitPathMacroName, MergePaths([UnitPathMacro, Pkg.ResolvedPaths.UnitPath]),
+      UnitPathMacroName, Paths.UnitPath,
       da_DefineRecurse
     );
 
     IncludeTemplate := TDefineTemplate.Create(
       'Add to the Include path', '',
-      IncludePathMacroName, MergePaths([IncludePathMacro, Pkg.ResolvedPaths.IncludePath]),
+      IncludePathMacroName, Paths.IncludePath,
       da_DefineRecurse
     );
 
     SrcTemplate := TDefineTemplate.Create(
       'Add to the Src path', '',
-      SrcPathMacroName, MergePaths([SrcPathMacro, Pkg.ResolvedPaths.SrcPath]),
+      SrcPathMacroName, Paths.SrcPath,
       da_DefineRecurse
     );
 
@@ -335,7 +355,7 @@ end;
 // If there are any projects (.lpi) or packages (.lpk) in the directory, use
 // (only) their search paths. Otherwise, inherit the search paths from the
 // parent directory ('ParentPaths').
-procedure ConfigurePaths(const Dir: string; const ParentPaths: TPaths);
+procedure ConfigurePaths(const Dir: string);
 var
   Packages,
   SubDirectories:    TStringList;
@@ -354,10 +374,7 @@ begin
 
   Packages       := nil;
   SubDirectories := nil;
-
   try
-    DebugLog('--- %s ---', [Dir]);
-
     // 1. Add local files to search path of current directory
     DirectoryTemplate := TDefineTemplate.Create(
       'Directory', '',
@@ -401,12 +418,10 @@ begin
       ConfigurePackage(Pkg);
     end;
 
-    DebugLog('  UnitPath: %s', [Paths.UnitPath]);
-
     // Recurse into child directories
     SubDirectories := FindAllDirectories(Dir, False);
     for i := 0 to SubDirectories.Count - 1 do
-      ConfigurePaths(SubDirectories[i], Paths);
+      ConfigurePaths(SubDirectories[i]);
   finally
     if Assigned(Packages) then
       FreeAndNil(Packages);
@@ -444,6 +459,7 @@ var
       Root := Doc.DocumentElement;
       if Root.NodeName = 'CONFIG' then
         Result := true;
+      DebugLog('Reading config from %s', [Path]);
     except
       // Swallow
     end;
@@ -523,7 +539,6 @@ var
 
   RootUri:   string;
   Directory: string;
-  Paths:     TPaths;
   Response:  TRpcResponse;
   Reader:    TJsonReader;
   Writer:    TJsonWriter;
@@ -581,10 +596,28 @@ begin
     URIToFilename(RootUri, Directory);
 
     // Try to fill in missing values by reading lazarus config
+    DebugLog('', []);
     GuessCodeToolConfig(Options);
 
     Options.ProjectDir     := Directory;
     Options.TestPascalFile := GetTempFileName;
+
+
+    DebugLog('', []);
+    DebugLog(':: Using Options', []);
+    DebugLog('  PP           = %s', [Options.FPCPath]);
+    DebugLog('  FPCDIR       = %s', [Options.FPCSrcDir]);
+    DebugLog('  LAZARUSDIR   = %s', [Options.LazarusSrcDir]);
+    DebugLog('  FPCTARGET    = %s', [Options.TargetOS]);
+    DebugLog('  FPCTARGETCPU = %s', [Options.TargetProcessor]);
+
+
+    DebugLog('', []);
+    DebugLog(':: Searching global packages', []);
+    PopulateGlobalPackages([
+      Options.LazarusSrcDir + '/components',
+      Options.LazarusSrcDir + '/lcl'
+    ]);
 
     with CodeToolBoss do
     begin
@@ -593,16 +626,21 @@ begin
       IdentifierList.SortForScope   := True;
     end;
 
-    Paths.IncludePath := '';
-    Paths.UnitPath    := '';
-    Paths.SrcPath     := '';
-
     // Load packages into our internal database and resolve dependencies
+    DebugLog('', []);
+    DebugLog(':: Loading all packages in %s', [Directory]);
     LoadAllPackagesUnderPath(Directory);
+
+    DebugLog('', []);
+    DebugLog(':: Guessing missing dependencies', []);
     GuessMissingDepsForAllPackages(Directory);
 
     // Configure CodeTools
-    ConfigurePaths(Directory, Paths);
+    DebugLog('', []);
+    DebugLog(':: Configuring Paths', []);
+    ConfigurePaths(Directory);
+
+    DebugLog('', []);
 
     // Send response & announce our capabilities
     Response := TRpcResponse.Create(Request.Id);
@@ -658,8 +696,8 @@ begin
         Writer.Bool(true);
       Writer.DictEnd;
 
-      Writer.Key('workspaceFolders');
-      Writer.Bool(true);
+      //Writer.Key('workspaceFolders');
+      //Writer.Bool(true);
     Writer.DictEnd;
 
     Rpc.Send(Response);

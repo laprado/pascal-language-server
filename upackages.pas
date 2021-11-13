@@ -57,6 +57,7 @@ type
   TPackage = class
     // Name of the package / project
     //Name:             string;
+    PkgFile:          string;
 
     // Home directory of the package / project
     Dir:              string;
@@ -107,6 +108,8 @@ type
   // E.g. 'LCLBase'  -> '/Applications/Lazarus/lcl/lclbase.lpk'
   function LookupGlobalPackage(const Name: string): string;
 
+procedure PopulateGlobalPackages(const SearchPaths: array of string);
+
 implementation
 
 uses
@@ -118,20 +121,27 @@ var
   // Map Path -> TPackage
   PkgCache:      TFPObjectHashTable;
 
-procedure PopulateGlobalPackages;
+
+procedure PopulateGlobalPackages(const SearchPaths: array of string);
 var
   Files:          TStringList;
-  FileName, Name: string;
+  Dir, FileName, Name: string;
 begin
   Files := TStringList.Create;
   try
-    FindAllFiles(Files, '/Applications/Lazarus/components', '*.lpk');
-    FindAllFiles(Files, '/Applications/Lazarus/lcl', '*.lpk');
+    for Dir in SearchPaths do
+    begin
+      DebugLog('  %s/*.lpk', [Dir]);
+      FindAllFiles(Files, Dir, '*.lpk');
+    end;
+
     for FileName in Files do
     begin
       Name := ExtractFileNameOnly(FileName);
       PkgNameToPath[UpperCase(Name)] := FileName;
     end;
+    DebugLog('  Found %d packages', [Files.Count]);
+
   finally
     Files.Free;
   end;
@@ -228,6 +238,7 @@ var
       Dep.Name    := Name.NodeValue; 
       Dep.Prefer  := False;
       Dep.Package := nil;
+      Dep.Path    := '';
 
       Path := Item.FindNode('DefaultFilename');
 
@@ -240,8 +251,8 @@ var
         if Assigned(Path) then
           Dep.Path := CreateAbsolutePath(Path.NodeValue, Package.Dir);
 
-        DebugLog('HARDCODED DEP %s in %s', [Dep.Name, Dep.Path]);
-        DebugLog('  Dir: %s, Rel: %s', [Package.Dir, Path.NodeValue]);
+        //DebugLog('HARDCODED DEP %s in %s', [Dep.Name, Dep.Path]);
+        //DebugLog('  Dir: %s, Rel: %s', [Package.Dir, Path.NodeValue]);
       end;
 
       Package.Dependencies[DepCount] := Dep;
@@ -253,9 +264,12 @@ begin
   if Assigned(PkgCache[FileName]) then
     Exit;
 
+  DebugLog('Loading %s', [FileName]);
+
   Package       := TPackage.Create;
   Package.Valid := False;
   Package.Dir   := ExtractFilePath(FileName);
+  Package.PkgFile := FileName;
 
   PkgCache[FileName] := Package;
 
@@ -318,7 +332,7 @@ initialization
 
 PkgNameToPath := TFPStringHashTable.Create;
 PkgCache      := TFPObjectHashTable.Create;
-PopulateGlobalPackages;
+//PopulateGlobalPackages;
 
 
 end.
