@@ -2,35 +2,33 @@
 
 An [LSP](https://microsoft.github.io/language-server-protocol/) server
 implementation for Pascal variants that are supported by [Free
-Pascal](https://www.freepascal.org/), including Object Pascal. It uses
-[CodeTools](https://wiki.lazarus.freepascal.org/Codetools) from
-Lazarus as backend.
-
+Pascal](https://www.freepascal.org/). It uses
+[CodeTools](https://wiki.lazarus.freepascal.org/Codetools) from Lazarus as
+backend.
 Forked from [the original
-project](https://github.com/arjanadriaanse/pascal-language-server). This fork
-adds many new features and fixes several bugs.
+project](https://github.com/arjanadriaanse/pascal-language-server), but has
+since been mostly rewritten. This fork adds many new features and fixes several
+bugs.
 
 
 ## Features
 
 - Code completion
-- Signature help
-- Go to declaration
-- Go to definition
-- Automatic dependency resolution for `.lpk` and `.lpr` files
+- Signature help (*new*)
+- Go to declaration (*new*)
+- Go to definition (*new*)
+- Automatic dependency resolution for `.lpk` and `.lpr` files (*new*)
 
-## Known bugs
+## Building
 
-- Does not work in include (`.inc`) files
-- Signature help does not show all overloads
+To compile, open the project file in Lazarus or use the commandline:
 
-## Wishlist
+```sh
+cd server
+lazbuild pasls.lpi
+```
 
-- Renaming of identifiers
-- “Find all references”
-- Signature help: Highlight active parameter
-- Code formatting?
-- Incremental updates? (Not sure if there would be any benefit)
+Tested with Free Pascal Compiler version 3.2.0 and Lazarus version 2.0.8. 
 
 ## Clients
 
@@ -41,35 +39,34 @@ adds many new features and fixes several bugs.
 ### Emacs
 
 To use the server from `lsp-mode` in Emacs, install the separate
-[`lsp-pascal`](https://github.com/arjanadriaanse/lsp-pascal) module. (Disclaimer: I don't
-maintain this and have not tested it as I don't use Emacs)
+[`lsp-pascal`](https://github.com/arjanadriaanse/lsp-pascal) module.
+(Disclaimer: I don't maintain this and have not tested it as I don't use Emacs)
 
 ### Other
-Any editor that allows you to add custom LSP configurations should in theory work.
+Any editor that allows you to add custom LSP configurations should in theory
+work.
 
 ## Configuration
 
-In order for Pascal Language Server to find all the units, it needs to know the locations of:
+In order for the language server to find all the units, it needs to know the
+following parameters:
 
-- the source files of the FPC standard library
-- the FPC compiler executable
-- the Lazarus install directory
-
-In addition, it needs to know
-
+- location of the FPC standard library source files
+- location of the FPC compiler executable
+- location of the Lazarus install directory
 - the OS you are compiling for
 - the architecture you are compiling for
 
-There are three ways to tell Pascal Language Server this information:
+By default, the server will try to auto-detect these parameters from your
+Lazarus config. It will search for config files in the following locations (the
+exact paths will depend on your operating system):
 
-0. Do nothing. 
+- `<User settings directory>/lazarus` (e.g. `/home/user/.config/lazarus`)
+- `<User home directory>/.lazarus` (e.g. `/home/user/.lazarus`)
+- `<System settings directory>/lazarus` (e.g. `/etc/lazarus`)
 
-   If you have Lazarus installed, Pascal Language Server will try to automatically detect your Lazarus settings. This should generally work, but it's possible that Pascal Language Server can't find your configuration or ends up using the wrong file, especially if your config is stored in an unorthodox location. It will look in these locations in the following order (from top to bottom):
-   - \<User settings directory\>/lazarus (e.g. `/home/user/.config/lazarus`)
-   - \<User home directory\>/.lazarus (e.g. `/home/user/.lazarus`)
-   - \<System settings directory\>/lazarus (e.g. `/etc/lazarus`)
-   
-   The exact paths depend on your operating system.
+If auto-detection does not work for you, you can also specify these parameters
+manually in one of the following ways:
 
 1. Set the environment variables:
 
@@ -81,7 +78,8 @@ There are three ways to tell Pascal Language Server this information:
 
    This overrides auto-detected settings.
 
-2. Specify the locations via LSP `initializationOptions`. How this is done will depend on your client. The format is the following:
+2. Or specify the locations via LSP `initializationOptions`. How this is done
+   will depend on your client. The format is the following:
    ```json
    {
      "PP": "",
@@ -94,11 +92,16 @@ There are three ways to tell Pascal Language Server this information:
 
    This overrides environment variables.
 
-## Building
+## Roadmap
 
-Requires Free Pascal Compiler version 3.2.0 and Lazarus version 2.0.8,
-open the project file in Lazarus or use the commandline:
+### Wishlist
 
-```sh
-lazbuild pasls.lpi
-```
+- Renaming of identifiers
+- “Find all references”
+- Signature help: Highlight active parameter
+- Code formatting?
+
+### Known bugs
+
+- Does not work in include (`.inc`) files
+- Signature help does not show all overloads
