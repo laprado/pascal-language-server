@@ -7,3 +7,5 @@ fedora-build:
   script:
     - cd server
     - lazbuild pasls.lpr
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
