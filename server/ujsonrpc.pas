@@ -95,8 +95,7 @@ const
   jsrpcContentModified      = -32801;
   jsrpcInvalidRequest       = -32600;
   jsrpcMethodNotFound       = -32601;
-
-	jsrpcRequestFailed        = -32803;
+  jsrpcRequestFailed        = -32803;
 
 implementation
 

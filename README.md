@@ -5,6 +5,7 @@ implementation for Pascal variants that are supported by [Free
 Pascal](https://www.freepascal.org/). It uses
 [CodeTools](https://wiki.lazarus.freepascal.org/Codetools) from Lazarus as
 backend.
+
 Forked from [the original
 project](https://github.com/arjanadriaanse/pascal-language-server), but has
 since been mostly rewritten. This fork adds many new features and fixes several
@@ -21,20 +22,21 @@ bugs.
 
 ## Building
 
-To compile, open the project file in Lazarus or use the commandline:
+To compile, open the project file in Lazarus or use the command line:
 
 ```sh
 cd server
 lazbuild pasls.lpi
 ```
 
-Tested with Free Pascal Compiler version 3.2.0 and Lazarus version 2.0.8. 
+It is recommended to use Free Pascal Compiler version 3.2.0 and Lazarus version
+2.0.8 or later, older versions are not officially supported.
 
 ## Clients
 
-### NeoVim ≥ 0.5.0
+### Neovim ≥ 0.5.0
 
-*todo*
+For information on how to use the server from Neovim, see [client/nvim](client/nvim).
 
 ### Emacs
 
@@ -43,8 +45,7 @@ To use the server from `lsp-mode` in Emacs, install the separate
 (Disclaimer: I don't maintain this and have not tested it as I don't use Emacs)
 
 ### Other
-Any editor that allows you to add custom LSP configurations should in theory
-work.
+Any editor that allows you to add custom LSP configurations should work.
 
 ## Configuration
 
@@ -65,8 +66,8 @@ exact paths will depend on your operating system):
 - `<User home directory>/.lazarus` (e.g. `/home/user/.lazarus`)
 - `<System settings directory>/lazarus` (e.g. `/etc/lazarus`)
 
-If auto-detection does not work for you, you can also specify these parameters
-manually in one of the following ways:
+In addition, you can also specify these parameters manually in one of the
+following ways:
 
 1. Set the environment variables:
 
