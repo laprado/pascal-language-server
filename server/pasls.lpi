@@ -44,16 +44,23 @@
       <FormatVersion Value="2"/>
       <Modes Count="0"/>
     </RunParams>
-    <RequiredPackages Count="3">
+    <RequiredPackages Count="5">
       <Item1>
-        <PackageName Value="CodeTools"/>
+        <PackageName Value="jsonstreampkg"/>
+        <DefaultFilename Value="deps/jsonstream/pascal/package/jsonstreampkg.lpk" Prefer="True"/>
       </Item1>
       <Item2>
-        <PackageName Value="WebLaz"/>
+        <PackageName Value="LCLBase"/>
       </Item2>
       <Item3>
-        <PackageName Value="FCL"/>
+        <PackageName Value="CodeTools"/>
       </Item3>
+      <Item4>
+        <PackageName Value="WebLaz"/>
+      </Item4>
+      <Item5>
+        <PackageName Value="FCL"/>
+      </Item5>
     </RequiredPackages>
     <Units Count="8">
       <Unit0>
@@ -61,31 +68,31 @@
         <IsPartOfProject Value="True"/>
       </Unit0>
       <Unit1>
-        <Filename Value="general.pas"/>
+        <Filename Value="uinitialize.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit1>
       <Unit2>
-        <Filename Value="lsp.pas"/>
+        <Filename Value="ujsonrpc.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit2>
       <Unit3>
-        <Filename Value="synchronization.pas"/>
+        <Filename Value="utextdocument.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit3>
       <Unit4>
-        <Filename Value="capabilities.pas"/>
+        <Filename Value="upackages.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit4>
       <Unit5>
-        <Filename Value="options.pas"/>
+        <Filename Value="udebug.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit5>
       <Unit6>
-        <Filename Value="completion.pas"/>
+        <Filename Value="ubufferedreader.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit6>
       <Unit7>
-        <Filename Value="basic.pas"/>
+        <Filename Value="uutils.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit7>
     </Units>
@@ -113,10 +120,23 @@
     <Linking>
       <Debugging>
         <DebugInfoType Value="dsDwarf2Set"/>
-        <UseHeaptrc Value="True"/>
         <TrashVariables Value="True"/>
         <UseExternalDbgSyms Value="True"/>
       </Debugging>
     </Linking>
   </CompilerOptions>
+  <Debugging>
+    <Exceptions Count="3">
+      <Item1>
+        <Name Value="ECodeToolError"/>
+        <Enabled Value="False"/>
+      </Item1>
+      <Item2>
+        <Name Value="EFOpenError"/>
+      </Item2>
+      <Item3>
+        <Name Value="Unknown"/>
+      </Item3>
+    </Exceptions>
+  </Debugging>
 </CONFIG>

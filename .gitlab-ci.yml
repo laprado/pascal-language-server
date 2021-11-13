@@ -1,0 +1,11 @@
+stages:
+  - build
+
+fedora-build:
+  stage: build
+  image: fedora-lazarus
+  script:
+    - cd server
+    - lazbuild pasls.lpr
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
