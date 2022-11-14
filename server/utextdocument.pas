@@ -318,20 +318,27 @@ end;
 
 procedure TextDocument_Completion(Rpc: TRpcPeer; Request: TRpcRequest);
 
-  function ShowErrorMessage(const ErrorMessage: String): TRpcNotification;
+  procedure ShowErrorMessage(const ErrorMessage: String);
   var
-    Writer:   TJsonWriter;
+    Writer: TJsonWriter;
+    MessageNotification: TRpcResponse;
   begin
-    Result := TRpcNotification.Create('window/showMessage');
-    Writer := Result.Writer;
+    MessageNotification := TRpcResponse.CreateNotification('window/showMessage');
+    try
+      Writer := MessageNotification.Writer;
 
-    Writer.Key('params');
-    Writer.Dict;
-      Writer.Key('type');
-      Writer.Number(1); // type = 1 means "error"
-      Writer.Key('message');
-      Writer.Str(ErrorMessage);
-    Writer.DictEnd;
+      Writer.Key('params');
+      Writer.Dict;
+        Writer.Key('type');
+        Writer.Number(1); // type = 1 means "error"
+        Writer.Key('message');
+        Writer.Str(ErrorMessage);
+      Writer.DictEnd;
+
+      Rpc.Send(MessageNotification);
+    finally
+      FreeAndNil(MessageNotification);
+    end;
   end;
 
 var
@@ -418,7 +425,7 @@ begin
         Rpc.Send(Response);
 
         if SyntaxErrorCausesShowMessage then
-          Rpc.Send(ShowErrorMessage(E.Message));
+          ShowErrorMessage(E.Message);
       end;
     end;
   finally
