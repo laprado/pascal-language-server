@@ -295,7 +295,6 @@ begin
     Result.Id      := Id;
     Result.Reader  := Reader;
     Result.FBuffer := Buffer;
-    Result.Reader  := Reader;
 
     DebugLog('> Request: '#10'%s', [Copy(Result.AsString, 1, 2000)]);
   except
