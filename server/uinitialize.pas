@@ -34,7 +34,7 @@ implementation
 uses
   SysUtils, Classes, CodeToolManager, CodeToolsConfig, URIParser, LazUTF8,
   DefineTemplates, FileUtil, LazFileUtils, DOM, XMLRead, udebug, uutils,
-  upackages;
+  upackages, utextdocument;
 
 
 // Resolve the dependencies of Pkg, and then the dependencies of the
@@ -532,10 +532,21 @@ begin
 end;
 
 procedure Initialize(Rpc: TRpcPeer; Request: TRpcRequest);
+
+  function SyntaxErrorReportingModeFromInt(const I: Integer): TSyntaxErrorReportingMode;
+  begin
+    if (I < Ord(Low(TSyntaxErrorReportingMode))) or
+       (I > Ord(High(TSyntaxErrorReportingMode))) then
+      raise Exception.CreateFmt('Invalid syntaxErrorReportingMode: %d, ignoring', [I]);
+
+    Result := TSyntaxErrorReportingMode(I)
+  end;
+
 var
   Options:   TCodeToolsOptions;
   Key:       string;
   s:         string;
+  i:         Integer;
 
   RootUri:   string;
   Directory: string;
@@ -587,7 +598,9 @@ begin
             else if (Key = 'FPCTARGET') and Reader.Str(s) then
               Options.TargetOS := s
             else if (Key = 'FPCTARGETCPU') and Reader.Str(s) then
-              Options.TargetProcessor := s;
+              Options.TargetProcessor := s
+            else if (Key = 'syntaxErrorReportingMode') and Reader.Number(i) then
+              SyntaxErrorReportingMode := SyntaxErrorReportingModeFromInt(i);
           end;
       end;
 

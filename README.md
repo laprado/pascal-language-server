@@ -47,7 +47,13 @@ For information on how to use the server from Neovim, see [client/nvim](client/n
 
 To use the server from `lsp-mode` in Emacs, install the separate
 [`lsp-pascal`](https://github.com/arjanadriaanse/lsp-pascal) module.
-(Disclaimer: I don't maintain this and have not tested it as I don't use Emacs)
+Full example setup of it is documented in [Michalis notes about LSP + Pascal](https://github.com/michaliskambi/elisp/tree/master/lsp).
+
+### VS Code
+
+Install the VS Code extension from https://github.com/genericptr/pasls-vscode .
+
+Note that the extension settings expose some additional LSP options not understood by this LSP server. But the basic ones (FPC, Lazarus configs and the executable of LSP server) work completely fine with this LSP server.
 
 ### Other
 Any editor that allows you to add custom LSP configurations should work.
@@ -97,6 +103,24 @@ following ways:
    ```
 
    This overrides environment variables.
+
+## Extra configuration in LSP initialization options
+
+Additional keys in LSP initialization options can be used to influence the LSP server behavior. See the docs of your LSP client (text editor) to know how to pass initialization options.
+
+- `syntaxErrorReportingMode` (integer): Determines how to report syntax errors. Syntax errors indicate that CodeTools cannot understand the surrounding Pascal code well enough to provide any code completion.
+
+    - 0 (default): Show an error message. This relies on the LSP client (text editor) handling the `window/showMessage` message. Support in various text editor:
+
+        - VS Code: works.
+
+        - NeoVim (0.8.0): works, the message is shown for ~1 sec by default.
+
+        - Emacs: works, the message is visible in [echo area](https://www.emacswiki.org/emacs/EchoArea) and the `*Messages*` buffer. You can filter out useless `No completion found` messages to make it perfect, see https://github.com/michaliskambi/elisp/blob/master/lsp/kambi-pascal-lsp.el for example.
+
+    - 1: Return a fake completion item with the error message. This works well in VC Code and NeoVim -- while the completion item doesn't really complete anything, but the error message is clearly visible.
+
+    - 2: Return an error to the LSP client. Some LSP clients will just hide the error, but some (like Emacs) will show it clearly and prominently.
 
 ## Roadmap
 
