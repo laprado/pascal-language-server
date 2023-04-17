@@ -23,7 +23,8 @@ program pasls;
 {$mode objfpc}{$H+}
 
 uses
-  Classes, SysUtils, iostream, streamex, udebug, ubufferedreader, jsonstream,
+  Classes, SysUtils, iostream, streamex, StreamIO,
+  udebug, ubufferedreader, jsonstream,
   upackages, ujsonrpc, uinitialize, utextdocument, uutils;
 
 procedure SendError(
@@ -149,6 +150,23 @@ begin
   end;
 end;
 
+{ Dump current exception backtrace. Copied from CastleClassUtils. }
+function DumpExceptionBackTraceToString: String;
+var
+  TextFile: Text;
+  StringStream: TStringStream;
+begin
+  StringStream := TStringStream.Create('');
+  try
+    AssignStream(TextFile, StringStream);
+    Rewrite(TextFile);
+    try
+      DumpExceptionBackTrace(TextFile);
+    finally CloseFile(TextFile) end;
+    Result := StringStream.DataString;
+  finally FreeAndNil(StringStream) end;
+end;
+
 begin
   InputStream    := nil;
   OutputStream   := nil;
@@ -210,7 +228,9 @@ begin
       Main(RpcPeer);
     except
       on E: Exception do
-        DebugLog('FATAL EXCEPTION: ' + E.Message);
+        DebugLog('FATAL EXCEPTION: ' + E.Message +
+          LineEnding + LineEnding +
+          DumpExceptionBackTraceToString);
     end;
   finally
     FreeAndNil(InputStream);

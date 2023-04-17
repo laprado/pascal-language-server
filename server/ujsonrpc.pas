@@ -317,7 +317,10 @@ begin
     Result.Reader  := Reader;
     Result.FBuffer := Buffer;
 
-    DebugLog('> Request: '#10'%s', [Copy(Result.AsString, 1, 2000)]);
+    DebugLog('> Request: ' + LineEnding + '%s', [
+      // Use TrimRight as the Response may contain some newline in undefined convention (Unix or Windows)
+      TrimRight(Copy(Result.AsString, 1, 2000))
+    ]);
   except
     FreeAndNil(Result);
     FreeAndNil(Reader);
@@ -347,7 +350,10 @@ begin
   if FOutput is THandleStream then
     FileFlush(THandleStream(FOutput).Handle);
 
-  DebugLog('< Response: '#10'%s', [Copy(Response.AsString, 1, 2000)]);
+  DebugLog('< Response: ' + LineEnding + '%s', [
+    // Use TrimRight as the Response may contain some newline in undefined convention (Unix or Windows)
+    TrimRight(Copy(Response.AsString, 1, 2000))
+  ]);
 end;
 
 constructor ERpcError.Create(ACode: Integer; const Msg: string);
