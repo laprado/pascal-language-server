@@ -282,9 +282,7 @@ begin
         Exit;
 
       if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
-        Root := Root.FindNode('Package')
-      else
-        Root := Root.FindNode('ProjectOptions');
+        Root := Root.FindNode('Package');
 
       if not Assigned(Root) then
         Exit;
