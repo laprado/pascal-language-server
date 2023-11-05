@@ -149,9 +149,9 @@ end;
 
 procedure LoadPackageOrProject(const FileName: string);
 var
-  Doc:     TXMLDocument;
-  Root:    TDomNode;
-  Package: TPackage;
+  Doc:                                     TXMLDocument;
+  Root, CompilerOptions, RequiredPackages: TDomNode;
+  Package:                                 TPackage;
 
   function GetAdditionalPaths(
     SearchPaths: TDomNode; const What: string
@@ -179,16 +179,12 @@ var
     end;
   end;
 
-  procedure LoadPaths;
+  procedure LoadPaths(CompilerOptions: TDomNode);
   var
-    CompilerOptions, SearchPaths: TDomNode;
+    SearchPaths: TDomNode;
   begin
     Package.Paths.IncludePath := Package.Dir;
     Package.Paths.UnitPath    := Package.Dir;
-
-    CompilerOptions := Root.FindNode('CompilerOptions');
-    if not Assigned(CompilerOptions) then
-      Exit;
 
     SearchPaths := CompilerOptions.FindNode('SearchPaths');
     if not Assigned(SearchPaths) then
@@ -205,21 +201,13 @@ var
     Package.Paths.SrcPath     := GetAdditionalPaths(SearchPaths, 'SrcPath');
   end;
 
-  procedure LoadDeps;
+  procedure LoadDeps(Deps: TDomNode);
   var
-    Deps, Item, Name, 
+    Item, Name, 
     Path, Prefer:      TDomNode;
     Dep:               TDependency;
     i, DepCount:       Integer;
   begin
-    if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
-      Deps := Root.FindNode('RequiredPkgs')
-    else
-      Deps := Root.FindNode('RequiredPackages');
-
-    if not Assigned(Deps) then
-      Exit;
-
     DepCount := 0;
     SetLength(Package.Dependencies, Deps.ChildNodes.Count);
 
@@ -260,6 +248,16 @@ var
     end;
   end;
 
+  function GetChildNodeFrom(BaseNode: TDomNode; const FromParent, Child: string): TDomNode;
+  var
+    TempNode: TDomNode;
+  begin
+    Result := nil;
+    TempNode := BaseNode.FindNode(FromParent);
+    if Assigned(TempNode) then
+      Result := TempNode.FindNode(Child);
+  end;
+
 begin
   if Assigned(PkgCache[FileName]) then
     Exit;
@@ -282,15 +280,21 @@ begin
         Exit;
 
       if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
-        Root := Root.FindNode('Package')
+      begin
+        CompilerOptions := GetChildNodeFrom(Root, 'Package', 'CompilerOptions');
+        RequiredPackages := Root.FindNode('RequiredPkgs');
+      end
       else
-        Root := Root.FindNode('ProjectOptions');
+      begin
+        CompilerOptions := Root.FindNode('CompilerOptions');
+        RequiredPackages := GetChildNodeFrom(Root, 'ProjectOptions', 'RequiredPackages');
+      end;
+      
+      if Assigned(CompilerOptions) then
+        LoadPaths(CompilerOptions);
 
-      if not Assigned(Root) then
-        Exit;
-
-      LoadPaths;
-      LoadDeps;
+      if Assigned(RequiredPackages) then
+        LoadDeps(RequiredPackages);
 
       Package.Valid := True;
     except on E:Exception do
