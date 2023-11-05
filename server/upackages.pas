@@ -149,9 +149,9 @@ end;
 
 procedure LoadPackageOrProject(const FileName: string);
 var
-  Doc:                                     TXMLDocument;
-  Root, CompilerOptions, RequiredPackages: TDomNode;
-  Package:                                 TPackage;
+  Doc:                                           TXMLDocument;
+  Root, Temp, CompilerOptions, RequiredPackages: TDomNode;
+  Package:                                       TPackage;
 
   function GetAdditionalPaths(
     SearchPaths: TDomNode; const What: string
@@ -186,9 +186,6 @@ var
     Package.Paths.IncludePath := Package.Dir;
     Package.Paths.UnitPath    := Package.Dir;
 
-    if not Assigned(CompilerOptions) then
-      Exit;
-
     SearchPaths := CompilerOptions.FindNode('SearchPaths');
     if not Assigned(SearchPaths) then
       Exit;
@@ -211,9 +208,6 @@ var
     Dep:               TDependency;
     i, DepCount:       Integer;
   begin
-    if not Assigned(Deps) then
-      Exit;
-
     DepCount := 0;
     SetLength(Package.Dependencies, Deps.ChildNodes.Count);
 
@@ -254,6 +248,16 @@ var
     end;
   end;
 
+  function GetChildNodeFrom(BaseNode: TDomNode; const FromParent, Child: string): TDomNode;
+  var
+    TempNode: TDomNode;
+  begin
+    Result := nil;
+    TempNode := BaseNode.FindNode(FromParent);
+    if Assigned(TempNode) then
+      Result := TempNode.FindNode(Child);
+  end;
+
 begin
   if Assigned(PkgCache[FileName]) then
     Exit;
@@ -277,20 +281,20 @@ begin
 
       if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
       begin
-        CompilerOptions := Root.FindNode('Package').FindNode('CompilerOptions');
+        CompilerOptions := GetChildNodeFrom(Root, 'Package', 'CompilerOptions');
         RequiredPackages := Root.FindNode('RequiredPkgs');
       end
       else
       begin
         CompilerOptions := Root.FindNode('CompilerOptions');
-        RequiredPackages := Root.FindNode('ProjectOptions').FindNode('RequiredPackages');
+        RequiredPackages := GetChildNodeFrom(Root, 'ProjectOptions', 'RequiredPackages');
       end;
+      
+      if Assigned(CompilerOptions) then
+        LoadPaths(CompilerOptions);
 
-      if not Assigned(CompilerOptions) then
-        Exit;
-
-      LoadPaths(CompilerOptions);
-      LoadDeps(RequiredPackages);
+      if Assigned(RequiredPackages) then
+        LoadDeps(RequiredPackages);
 
       Package.Valid := True;
     except on E:Exception do
