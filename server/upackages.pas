@@ -149,9 +149,9 @@ end;
 
 procedure LoadPackageOrProject(const FileName: string);
 var
-  Doc:     TXMLDocument;
-  Root:    TDomNode;
-  Package: TPackage;
+  Doc:                                     TXMLDocument;
+  Root, CompilerOptions, RequiredPackages: TDomNode;
+  Package:                                 TPackage;
 
   function GetAdditionalPaths(
     SearchPaths: TDomNode; const What: string
@@ -179,14 +179,13 @@ var
     end;
   end;
 
-  procedure LoadPaths;
+  procedure LoadPaths(CompilerOptions: TDomNode);
   var
-    CompilerOptions, SearchPaths: TDomNode;
+    SearchPaths: TDomNode;
   begin
     Package.Paths.IncludePath := Package.Dir;
     Package.Paths.UnitPath    := Package.Dir;
 
-    CompilerOptions := Root.FindNode('CompilerOptions');
     if not Assigned(CompilerOptions) then
       Exit;
 
@@ -205,18 +204,13 @@ var
     Package.Paths.SrcPath     := GetAdditionalPaths(SearchPaths, 'SrcPath');
   end;
 
-  procedure LoadDeps;
+  procedure LoadDeps(Deps: TDomNode);
   var
-    Deps, Item, Name, 
+    Item, Name, 
     Path, Prefer:      TDomNode;
     Dep:               TDependency;
     i, DepCount:       Integer;
   begin
-    if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
-      Deps := Root.FindNode('RequiredPkgs')
-    else
-      Deps := Root.FindNode('RequiredPackages');
-
     if not Assigned(Deps) then
       Exit;
 
@@ -282,13 +276,21 @@ begin
         Exit;
 
       if UpperCase(ExtractFileExt(FileName)) = '.LPK' then
-        Root := Root.FindNode('Package');
+      begin
+        CompilerOptions := Root.FindNode('Package').FindNode('CompilerOptions');
+        RequiredPackages := Root.FindNode('RequiredPkgs');
+      end
+      else
+      begin
+        CompilerOptions := Root.FindNode('CompilerOptions');
+        RequiredPackages := Root.FindNode('ProjectOptions').FindNode('RequiredPackages');
+      end;
 
-      if not Assigned(Root) then
+      if not Assigned(CompilerOptions) then
         Exit;
 
-      LoadPaths;
-      LoadDeps;
+      LoadPaths(CompilerOptions);
+      LoadDeps(RequiredPackages);
 
       Package.Valid := True;
     except on E:Exception do

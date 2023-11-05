@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CONFIG>
   <ProjectOptions>
-    <Version Value="11"/>
+    <Version Value="12"/>
     <General>
       <Flags>
         <MainUnitHasCreateFormStatements Value="False"/>
+        <CompatibilityMode Value="True"/>
       </Flags>
       <SessionStorage Value="InProjectDir"/>
-      <MainUnit Value="0"/>
       <Title Value="pasls"/>
       <UseAppBundle Value="False"/>
       <ResourceType Value="res"/>
@@ -42,25 +42,27 @@
     </PublishOptions>
     <RunParams>
       <FormatVersion Value="2"/>
-      <Modes Count="0"/>
     </RunParams>
-    <RequiredPackages Count="5">
+    <RequiredPackages Count="6">
       <Item1>
-        <PackageName Value="jsonstreampkg"/>
-        <DefaultFilename Value="deps/jsonstream/pascal/package/jsonstreampkg.lpk" Prefer="True"/>
+        <PackageName Value="LazUtils"/>
       </Item1>
       <Item2>
-        <PackageName Value="LCLBase"/>
+        <PackageName Value="jsonstreampkg"/>
+        <DefaultFilename Value="deps/jsonstream/pascal/package/jsonstreampkg.lpk" Prefer="True"/>
       </Item2>
       <Item3>
-        <PackageName Value="CodeTools"/>
+        <PackageName Value="LCLBase"/>
       </Item3>
       <Item4>
-        <PackageName Value="WebLaz"/>
+        <PackageName Value="CodeTools"/>
       </Item4>
       <Item5>
-        <PackageName Value="FCL"/>
+        <PackageName Value="WebLaz"/>
       </Item5>
+      <Item6>
+        <PackageName Value="FCL"/>
+      </Item6>
     </RequiredPackages>
     <Units Count="8">
       <Unit0>
