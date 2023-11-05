@@ -149,9 +149,9 @@ end;
 
 procedure LoadPackageOrProject(const FileName: string);
 var
-  Doc:                                           TXMLDocument;
-  Root, Temp, CompilerOptions, RequiredPackages: TDomNode;
-  Package:                                       TPackage;
+  Doc:                                     TXMLDocument;
+  Root, CompilerOptions, RequiredPackages: TDomNode;
+  Package:                                 TPackage;
 
   function GetAdditionalPaths(
     SearchPaths: TDomNode; const What: string
