@@ -133,5 +133,4 @@ Additional keys in LSP initialization options can be used to influence the LSP s
 
 ### Known bugs
 
-- Does not work in include (`.inc`) files
 - Signature help does not show all overloads
